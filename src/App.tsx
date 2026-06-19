@@ -6,15 +6,16 @@ import './App.css';
 
 type AudioDevice = { name?: string; direction?: string; status?: string; id?: string };
 type AppProcess = { app?: string; process?: string; pid?: number; title?: string; ramMb?: number; activity?: number; session?: string; volume?: number };
-type AudioSession = { app?: string; process?: string; pid?: number; volume?: number; peak?: number; active?: boolean; route?: string; device?: string; source?: string; recent?: boolean; lastSeen?: number; pids?: number[]; muted?: boolean; mutedBySolo?: boolean; solo?: boolean };
-type MixerPersist = Record<string, { app?: string; process?: string; volume: number; route: string; muted: boolean; mutedBySolo: boolean; solo: boolean; previousVolume?: number; lastSeen: number }>;
+type AudioRoute = { a1: boolean; a2: boolean; a3: boolean; a4: boolean; a5: boolean };
+type AudioSession = { app?: string; process?: string; pid?: number; volume?: number; peak?: number; active?: boolean; route?: string; routing?: AudioRoute; device?: string; source?: string; recent?: boolean; lastSeen?: number; pids?: number[]; muted?: boolean; mutedBySolo?: boolean; solo?: boolean };
+type MixerPersist = Record<string, { app?: string; process?: string; volume: number; route: string; routing: AudioRoute; muted: boolean; mutedBySolo: boolean; solo: boolean; previousVolume?: number; lastSeen: number }>;
 type MillerState = {
   ok?: boolean;
   timestamp?: string;
   warning?: string;
   hardware?: { inputs?: AudioDevice[]; outputs?: AudioDevice[]; preferredInput?: AudioDevice | null; preferredOutput?: AudioDevice | null };
   apps?: AppProcess[];
-  performance?: { sampleRate?: number; buffer?: number; latencyMs?: number; cpu?: number };
+  performance?: { sampleRate?: number; buffer?: number; latencyMs?: number; inputLatencyMs?: number; outputLatencyMs?: number; roundTripLatencyMs?: number; cpu?: number };
   logsPath?: string;
   rawDeviceLines?: string[];
 };
@@ -90,6 +91,7 @@ const OFFICIAL_PROFILES: Profile[] = [
 ];
 const OFFICIAL_PROFILE_NAMES = new Set(OFFICIAL_PROFILES.map(p => p.name.toLowerCase()));
 const DEFAULT_ROUTES: RoutePreset[] = [{ id: 'default', name: 'Rota Principal', matrix: {}, outputs: ['', '', '', '', ''] }];
+const ROUTE_KEYS: (keyof AudioRoute)[] = ['a1','a2','a3','a4','a5'];
 
 function safeArray<T>(v: unknown): T[] { return Array.isArray(v) ? v as T[] : []; }
 function n(v: unknown, fallback = 0): number { const x = Number(v); return Number.isFinite(x) ? x : fallback; }
@@ -153,6 +155,7 @@ function makePersistItem(row: any, existing?: MixerPersist[string]): MixerPersis
     process: row?.process || sessionKey(row),
     volume: n(existing?.volume ?? row?.volume, 100),
     route: existing?.route || row?.route || 'A1',
+    routing: normalizeRoute(existing?.routing || row?.routing),
     muted: !!existing?.muted,
     mutedBySolo: !!existing?.mutedBySolo,
     solo: !!existing?.solo,
@@ -168,6 +171,7 @@ function normalizeMixerPersist(raw: any): MixerPersist {
       process: value?.process || key,
       volume: n(value?.volume, 100),
       route: value?.route || 'A1',
+      routing: normalizeRoute(value?.routing),
       muted: !!value?.muted,
       mutedBySolo: !!value?.mutedBySolo,
       solo: !!value?.solo,
@@ -177,20 +181,20 @@ function normalizeMixerPersist(raw: any): MixerPersist {
   }
   return out;
 }
-function loadMixerPersist(): MixerPersist { try { return normalizeMixerPersist(JSON.parse(localStorage.getItem('miller_mixer_persist_v653') || localStorage.getItem('miller_mixer_persist_v652') || '{}') || {}); } catch { return {}; } }
-function saveMixerPersist(v: MixerPersist) { localStorage.setItem('miller_mixer_persist_v653', JSON.stringify(normalizeMixerPersist(v))); }
+function loadMixerPersist(): MixerPersist { try { return normalizeMixerPersist(JSON.parse(localStorage.getItem('miller_mixer_persist_v660') || localStorage.getItem('miller_mixer_persist_v653') || localStorage.getItem('miller_mixer_persist_v652') || '{}') || {}); } catch { return {}; } }
+function saveMixerPersist(v: MixerPersist) { localStorage.setItem('miller_mixer_persist_v660', JSON.stringify(normalizeMixerPersist(v))); }
 function mergeSessionsWithPersist(rows: any[], persist: MixerPersist, includeRecent = false) {
   const now = Date.now();
   const map = new Map<string, any>();
   for (const r of groupAudioRows(rows || [])) {
     const key = sessionKey(r);
     const saved = persist[key];
-    map.set(key, { ...r, key, volume: saved?.volume ?? n(r.volume, 100), route: saved?.route || r.route || 'A1', muted: !!saved?.muted, mutedBySolo: !!saved?.mutedBySolo, solo: !!saved?.solo, recent: false, lastSeen: now });
+    map.set(key, { ...r, key, volume: saved?.volume ?? n(r.volume, 100), route: saved?.route || r.route || 'A1', routing: normalizeRoute(saved?.routing || r.routing), muted: !!saved?.muted, mutedBySolo: !!saved?.mutedBySolo, solo: !!saved?.solo, recent: false, lastSeen: now });
   }
   if (includeRecent) {
     for (const [key, saved] of Object.entries(persist)) {
       if (!map.has(key) && saved.lastSeen && now - saved.lastSeen < 1000 * 60 * 60 * 24 * 7) {
-        map.set(key, { key, app: saved.app || saved.process || key, process: saved.process || key, pid: 0, pids: [], volume: saved.volume, peak: 0, active: false, route: saved.route || 'A1', muted: !!saved.muted, mutedBySolo: !!saved.mutedBySolo, solo: !!saved.solo, recent: true, lastSeen: saved.lastSeen, source: 'RECENT' });
+        map.set(key, { key, app: saved.app || saved.process || key, process: saved.process || key, pid: 0, pids: [], volume: saved.volume, peak: 0, active: false, route: saved.route || 'A1', routing: normalizeRoute(saved.routing), muted: !!saved.muted, mutedBySolo: !!saved.mutedBySolo, solo: !!saved.solo, recent: true, lastSeen: saved.lastSeen, source: 'RECENT' });
       }
     }
   }
@@ -199,7 +203,11 @@ function mergeSessionsWithPersist(rows: any[], persist: MixerPersist, includeRec
 function freeExpiryKey(machine?: string) { return `miller_free_expires_at_${machine || machineId()}`; }
 function freeLeftFromLocal(machine?: string) { const exp = Number(localStorage.getItem(freeExpiryKey(machine)) || 0); return exp ? Math.max(0, Math.floor((exp - Date.now()) / 1000)) : null; }
 
-function latencyText(perf: any, t: any) { const v = n(perf?.latencyMs, 0); return v > 0 ? `${v} ms` : (t.latencyPending || 'Aguardando medição real'); }
+function latencyText(perf: any, t: any) { const v = n(perf?.roundTripLatencyMs ?? perf?.latencyMs, 0); return v > 0 ? `${v} ms` : (t.latencyPending || 'Aguardando medição real'); }
+function latencyStatus(ms: number) { return ms <= 0 ? 'warn' : ms <= 15 ? 'ok' : ms <= 35 ? 'warn' : 'off'; }
+function normalizeRoute(v: any): AudioRoute { return { a1: v?.a1 ?? v?.[0] ?? true, a2: v?.a2 ?? v?.[1] ?? false, a3: v?.a3 ?? v?.[2] ?? false, a4: v?.a4 ?? v?.[3] ?? false, a5: v?.a5 ?? v?.[4] ?? false }; }
+function routeLabel(r?: AudioRoute) { const x = normalizeRoute(r); const labels = ROUTE_KEYS.map((k,i)=>x[k] ? `A${i+1}` : '').filter(Boolean); return labels.length ? labels.join(' + ') : 'OFF'; }
+function patchRoute(r: AudioRoute | undefined, bus: keyof AudioRoute, value: boolean) { const next = normalizeRoute(r); next[bus] = value; return next; }
 function card(title: string, value: string, sub?: string, status: 'ok' | 'warn' | 'off' = 'ok') { return <div className="stat-card"><span>{title}</span><b className={status}>{value}</b>{sub && <small>{sub}</small>}</div>; }
 function row(label: string, value: string | number, status: 'ok' | 'warn' | 'off' | '' = '') { return <div className="row"><span>{label}</span><b className={status}>{value}</b></div>; }
 
@@ -306,7 +314,7 @@ export default function App() {
           const now = Date.now();
           for (const r of grouped) {
             const key = sessionKey(r);
-            next[key] = { app: r.app, process: r.process || key, volume: next[key]?.volume ?? n(r.volume, 100), route: next[key]?.route || r.route || 'A1', muted: !!next[key]?.muted, mutedBySolo: hasAnySolo(next) && !next[key]?.solo, solo: !!next[key]?.solo, previousVolume: next[key]?.previousVolume, lastSeen: now };
+            next[key] = { app: r.app, process: r.process || key, volume: next[key]?.volume ?? n(r.volume, 100), route: next[key]?.route || r.route || 'A1', routing: normalizeRoute(next[key]?.routing || r.routing), muted: !!next[key]?.muted, mutedBySolo: hasAnySolo(next) && !next[key]?.solo, solo: !!next[key]?.solo, previousVolume: next[key]?.previousVolume, lastSeen: now };
           }
           return next;
         });
@@ -413,13 +421,17 @@ export default function App() {
     const pids = Array.isArray(row?.pids) && row.pids.length ? row.pids : (row?.pid ? [row.pid] : []);
     for (const pid of pids) await invoke('set_audio_session_muted', { pid: Number(pid), muted }).catch(()=>{});
   }
+  async function applyRouteToSession(row: any, routing: AudioRoute) {
+    const pids = Array.isArray(row?.pids) && row.pids.length ? row.pids : (row?.pid ? [row.pid] : []);
+    for (const pid of pids) await invoke('set_audio_session_route', { pid: Number(pid), route: routeLabel(routing), routing }).catch(()=>{});
+  }
   async function applyPersistedMuteState(rows: any[], persist: MixerPersist) {
     for (const r of rows) {
       const saved = persist[sessionKey(r)];
       if (saved) await applyMuteToSession(r, !!saved.muted || !!saved.mutedBySolo);
     }
   }
-  async function updateMixerRow(row: any, patch: Partial<{volume:number; route:string; muted:boolean; solo:boolean}>) {
+  async function updateMixerRow(row: any, patch: Partial<{volume:number; route:string; routing:AudioRoute; muted:boolean; solo:boolean}>) {
     const key = sessionKey(row);
     const allRows = mergeSessionsWithPersist(audioSessions, mixerPersist, true);
     const next: MixerPersist = normalizeMixerPersist(mixerPersist);
@@ -431,6 +443,12 @@ export default function App() {
       next[key].muted = false;
     }
     if (patch.muted !== undefined) next[key].muted = !!patch.muted;
+    if (patch.routing !== undefined) { next[key].routing = normalizeRoute(patch.routing); next[key].route = routeLabel(next[key].routing); }
+    if (patch.route !== undefined && patch.routing === undefined) {
+      const routeName = String(patch.route || 'A1').toLowerCase() as keyof AudioRoute;
+      next[key].routing = normalizeRoute({ [routeName]: true });
+      next[key].route = routeLabel(next[key].routing);
+    }
 
     if (patch.solo !== undefined) {
       next[key].solo = !!patch.solo;
@@ -446,6 +464,7 @@ export default function App() {
 
     setMixerPersist(next);
     if (patch.volume !== undefined) await applyVolumeToSession(row, next[key].volume);
+    if (patch.route !== undefined || patch.routing !== undefined) await applyRouteToSession(row, next[key].routing);
     await applyPersistedMuteState(allRows, next);
   }
   const nav: [Tab,string][] = [['dashboard',t.nav.dashboard],['devices',t.nav.devices],['apps',t.nav.apps],['smartMic',t.nav.smartMic],['routes',t.nav.routes],['settings',t.nav.settings],['support',t.nav.support],['license',t.nav.license],['studio',t.nav.studio || t.studioTitle || 'Studio']];
@@ -454,7 +473,7 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><span className="dot"/><div><h1>Miller</h1><p>Audio Studio X</p></div></div>
       {nav.map(([id,label]) => <button key={id} className={tab===id?'nav active':'nav'} onClick={() => setTab(id)}>{label}</button>)}
-      <small className="version">V6.5.3 Stability & Performance</small>
+      <small className="version">V6.6 Complete Routing Update</small>
     </aside>
     <main className="main">
       <div className="top-actions"><label className="auto-pill"><input type="checkbox" checked={settings.autoRefresh} onChange={e=>updateSettings({autoRefresh:e.target.checked})}/>{t.auto}</label><button onClick={()=>refresh(true)}>{loading?t.running:t.refresh}</button><button>{t.core}</button></div>
@@ -475,8 +494,8 @@ export default function App() {
   </div>;
 }
 
-function Dashboard({t, inputs, outputs, apps, prefIn, prefOut, perf, profile, routes, timestamp, licenseState}: any) { return <section><h2>{t.dashboardTitle}</h2><p className="sub">{t.dashboardSub}</p><div className="stats">{card(t.microphone, prefIn?t.ok:t.off, prefIn?.name || t.notFound, prefIn?'ok':'warn')}{card(t.output, prefOut?t.ok:t.off, prefOut?.name || t.notFound, prefOut?'ok':'warn')}{card(t.smartMicStatus, profile ? profileName(profile,t) : '—', t.profileCurrent)}{card(t.latency, latencyText(perf,t), '', 'warn')}</div><div className="grid3"><div className="panel"><h3>{t.systemStatus}</h3>{row(t.inputs, inputs.length, inputs.length?'ok':'warn')}{row(t.outputs, outputs.length, outputs.length?'ok':'warn')}{row(t.apps, apps.length)}{row(t.routesStatus, routes.length)}{row(t.lastRead, timestamp)}</div><div className="panel"><h3>{t.smartTitle}</h3>{row(t.profileCurrent, profile ? profileName(profile,t) : '—','ok')}{row(t.noise, `${profile?.smartMic?.noise || 0}%`)}{row(t.keyboard, `${profile?.smartMic?.keyboard || 0}%`)}{row(t.natural, `${profile?.smartMic?.natural || 0}%`)}</div><div className="panel"><h3>{t.license}</h3>{row(t.status, licenseState?.licenseType || t.freeStatus, licenseState?.activated?'ok':'warn')}{row(t.remaining, licenseState?.activated ? '∞' : formatTimeMMSS(licenseState?.freeSecondsLeft || 3600))}<p className="hint">{translateMessage(licenseState?.message, t) || t.freeNote}</p></div></div></section>; }
-function Devices({t, inputs, outputs, prefIn, prefOut, onInput, onOutput, timestamp}: any) { return <section><h2>{t.devicesTitle}</h2><p className="sub">{t.devicesSub}</p><div className="grid2"><div className="panel"><h3>{t.current}</h3><label>{t.microphone}<select value={prefIn?.id || ''} onChange={e=>onInput(e.target.value)}><option value="">{t.notFound}</option>{inputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label><label>{t.output}<select value={prefOut?.id || ''} onChange={e=>onOutput(e.target.value)}><option value="">{t.notFound}</option>{outputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{row(t.lastRead, timestamp)}</div><DeviceList title={t.inputs} devices={inputs} empty={t.notFound} t={t}/></div><div className="grid2"><DeviceList title={t.outputs} devices={outputs} empty={t.notFound} t={t}/><div className="panel"><h3>{t.future}</h3><p className="hint">{t.coreAudioNext}</p></div></div></section>; }
+function Dashboard({t, inputs, outputs, apps, prefIn, prefOut, perf, profile, routes, timestamp, licenseState}: any) { return <section><h2>{t.dashboardTitle}</h2><p className="sub">{t.dashboardSub}</p><div className="stats">{card(t.microphone, prefIn?t.ok:t.off, prefIn?.name || t.notFound, prefIn?'ok':'warn')}{card(t.output, prefOut?t.ok:t.off, prefOut?.name || t.notFound, prefOut?'ok':'warn')}{card(t.smartMicStatus, profile ? profileName(profile,t) : '—', t.profileCurrent)}{card(t.latency, latencyText(perf,t), t.roundTrip || 'Round Trip', latencyStatus(n(perf?.roundTripLatencyMs ?? perf?.latencyMs)))}</div><div className="grid3"><div className="panel"><h3>{t.systemStatus}</h3>{row(t.inputs, inputs.length, inputs.length?'ok':'warn')}{row(t.outputs, outputs.length, outputs.length?'ok':'warn')}{row(t.apps, apps.length)}{row(t.routesStatus, routes.length)}{row(t.lastRead, timestamp)}</div><div className="panel"><h3>{t.smartTitle}</h3>{row(t.profileCurrent, profile ? profileName(profile,t) : '—','ok')}{row(t.noise, `${profile?.smartMic?.noise || 0}%`)}{row(t.keyboard, `${profile?.smartMic?.keyboard || 0}%`)}{row(t.natural, `${profile?.smartMic?.natural || 0}%`)}</div><div className="panel"><h3>{t.license}</h3>{row(t.status, licenseState?.licenseType || t.freeStatus, licenseState?.activated?'ok':'warn')}{row(t.remaining, licenseState?.activated ? '∞' : formatTimeMMSS(licenseState?.freeSecondsLeft || 3600))}<p className="hint">{translateMessage(licenseState?.message, t) || t.freeNote}</p></div></div></section>; }
+function Devices({t, inputs, outputs, prefIn, prefOut, onInput, onOutput, timestamp}: any) { return <section><h2>{t.devicesTitle}</h2><p className="sub">{t.devicesSub}</p><div className="grid2"><div className="panel"><h3>{t.current}</h3><label>{t.microphone}<select value={prefIn?.id || ''} onChange={e=>onInput(e.target.value)}><option value="">{t.notFound}</option>{inputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label><label>{t.output}<select value={prefOut?.id || ''} onChange={e=>onOutput(e.target.value)}><option value="">{t.notFound}</option>{outputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{row(t.lastRead, timestamp)}</div><DeviceList title={t.inputs} devices={inputs} empty={t.notFound} t={t}/></div><div className="grid2"><DeviceList title={t.outputs} devices={outputs} empty={t.notFound} t={t}/><div className="panel"><h3>{t.future}</h3><p className="hint">{t.deviceManagerHelp || 'Gerenciador A1-A5 ativo: associe os barramentos Miller às saídas físicas detectadas.'}</p></div></div></section>; }
 function DeviceList({title, devices, empty, t}: {title:string; devices:AudioDevice[]; empty:string; t:any}) { const dirLabel=(d?:string)=>d==='input'?t.input:d==='output'?t.output:d; return <div className="panel"><h3>{title}</h3>{devices.length ? devices.map((d,i)=><div className="device" key={`${d.id}-${i}`}><b>{d.name}</b><span className="ok">{d.status || t.ok}</span><small>{dirLabel(d.direction)} · {shortId(d.id)}</small></div>) : <p className="empty">{empty}</p>}</div>; }
 function Applications({t, sessions, updateMixerRow}: any) {
   const rows = Array.isArray(sessions) ? sessions.slice(0, 24) : [];
@@ -487,7 +506,7 @@ function Applications({t, sessions, updateMixerRow}: any) {
     <div className="panel">
       <h3>{t.audioSessions || 'Audio Sessions'}</h3>
       <p className="hint">{t.realAudioOnly || 'Dados reais: sem estimativa por RAM/CPU. Se um app não aparecer, ele não está emitindo áudio detectável no momento ou o Windows ainda não criou uma sessão para ele.'}</p>
-      {rows.length ? <table><thead><tr><th>{t.apps}</th><th>{t.process}</th><th>{t.pid || 'PID'}</th><th>{t.volume}</th><th>{t.vuMeter}</th><th>{t.status}</th><th>{t.source || 'Fonte'}</th></tr></thead><tbody>{rows.map((a:any,i:number)=><tr key={`${a.key || a.process}-${a.pid}-${i}`}><td><b>{a.app || '—'}</b></td><td>{a.process}</td><td>{a.pid || '—'}</td><td><input className="volume-slider" type="range" min="0" max="100" value={n(a.muted ? 0 : a.volume)} onChange={e=>updateRow(a,{volume:Number(e.target.value), muted:false})}/><small>{n(a.muted ? 0 : a.volume)}%</small></td><td><span className="mini-bar"><i style={{width:`${n(a.peak)}%`}}/></span><small>{n(a.peak)}%</small></td><td className={a.active?'ok':'warn'}>{a.active?t.active:t.silent}</td><td><small>{a.source || 'WASAPI_SESSION_REAL'}</small></td></tr>)}</tbody></table> : <div className="empty-state"><b>{t.noRealAudioSessions || 'Nenhuma sessão de áudio real detectada.'}</b><p>{t.noRealAudioSessionsHelp || 'Abra um vídeo, música, Discord, OBS ou jogo emitindo som. O Miller atualiza as sessões automaticamente a cada segundo.'}</p></div>}
+      {rows.length ? <table><thead><tr><th>{t.apps}</th><th>{t.process}</th><th>{t.pid || 'PID'}</th><th>{t.volume}</th><th>{t.vuMeter}</th><th>{t.routingCore || 'Routing Core'}</th><th>{t.status}</th></tr></thead><tbody>{rows.map((a:any,i:number)=>{ const routing = normalizeRoute(a.routing); return <tr key={`${a.key || a.process}-${a.pid}-${i}`}><td><b>{a.app || '—'}</b></td><td>{a.process}</td><td>{a.pid || '—'}</td><td><input className="volume-slider" type="range" min="0" max="100" value={n(isEffectivelyMuted(a) ? 0 : a.volume)} onChange={e=>updateRow(a,{volume:Number(e.target.value), muted:false})}/><small>{n(isEffectivelyMuted(a) ? 0 : a.volume)}%</small></td><td><span className="mini-bar"><i style={{width:`${n(a.peak)}%`}}/></span><small>{n(a.peak)}%</small></td><td><div className="route-buttons">{ROUTE_KEYS.map((k,idx)=><button key={k} className={routing[k]?'circle on':'circle'} onClick={()=>updateRow(a,{routing:patchRoute(routing,k,!routing[k])})}>A{idx+1}</button>)}</div><small>{routeLabel(routing)}</small></td><td className={a.active?'ok':'warn'}>{a.active?t.active:t.silent}</td></tr>;})}</tbody></table> : <div className="empty-state"><b>{t.noRealAudioSessions || 'Nenhuma sessão de áudio real detectada.'}</b><p>{t.noRealAudioSessionsHelp || 'Abra um vídeo, música, Discord, OBS ou jogo emitindo som. O Miller atualiza as sessões automaticamente a cada segundo.'}</p></div>}
     </div>
   </section>;
 }
@@ -549,7 +568,7 @@ function Routes({t, apps, outputs, routes, setRoutes, selected, setSelected, lic
   return <section><h2>{t.routesTitle}</h2><p className="sub">{t.routesSub}</p><div className="grid2 wide-left"><div className="panel"><h3>{t.routesTitle}</h3><label>{t.route}<select value={selected} onChange={e=>setSelected(Number(e.target.value))}>{routes.map((r:RoutePreset,i:number)=><option value={i} key={r.id}>{routeDisplayName(r.name, t)}</option>)}</select></label><label>{t.name}<input value={routeDisplayName(route?.name, t)} onChange={e=>rename(e.target.value)}/></label><p className="hint">{t.realRoutesOnly}</p><div className="btn-row"><button disabled={!canAddRoute} onClick={()=>{ if(!canAddRoute){ alert(t.freeRouteLimit); return; } addRoute(); }}>{t.new}</button><button disabled={!canAddRoute} onClick={()=>{ if(!canAddRoute){ alert(t.freeRouteLimit); return; } cloneRoute(); }}>{t.clone}</button><button disabled={routes.length<=1} title={t.routeDeleteHelp} onClick={deleteRoute}>{t.delete}</button></div><table><thead><tr><th>{t.apps}</th><th>{t.process}</th><th>A1</th><th>A2</th><th>A3</th><th>A4</th><th>A5</th></tr></thead><tbody>{(apps.length?apps:[{app:'—',process:'—'}]).slice(0,18).map((a:any,i:number)=>{ const proc=String(a.process||`app-${i}`); const arr=route?.matrix?.[proc]||[true,false,false,false,false]; return <tr key={i}><td><b>{a.app}</b></td><td>{proc}{a.recent && <small> · {t.recentApp || 'Recente'}</small>}</td>{[0,1,2,3,4].map(x=><td key={x}><button className={arr[x]?'circle on':'circle'} onClick={()=>toggle(proc,x)}>A{x+1}</button></td>)}</tr>;})}</tbody></table></div><div className="panel"><h3>{t.routeOutputs}</h3><p className="hint">{t.outputBusHelp}</p><div className="bus-list">{[0,1,2,3,4].map(i=><label className="bus-select" key={i}>A{i+1}<select value={routeOutputs[i] || ''} onChange={e=>setBus(i,e.target.value)}>{outputOptions.map(([id, label]: any, n: number)=><option key={`${id}-${n}`} value={id}>{label}</option>)}</select><small>{routeOutputLabel(routeOutputs[i], i, outputs, t)}</small></label>)}</div><h3>{t.outputMatrix}</h3>{[0,1,2,3,4].map(i=>row(`A${i+1}`, routeOutputLabel(routeOutputs[i], i, outputs, t), routeOutputs[i]?'ok':'warn'))}</div></div></section>;
 }
 
-function SettingsPanel({licenseState, t, settings, updateSettings, perf, logsPath, runAudit, openLogs, debugLoading, applyQuality, updateInfo, updateLoading, checkUpdatesNow}: any) { const limits = planLimits(licenseState); const allThemeOptions = [['miller-blue','Miller Blue'],['miller-red','Miller Red'],['miller-purple','Miller Purple'],['miller-green','Miller Green'],['miller-gold','Miller Gold'],['miller-orange','Miller Orange'],['miller-ice','Miller Ice'],['miller-carbon','Miller Carbon'],['miller-cyberpunk','Miller Cyberpunk'],['miller-midnight','Miller Midnight'],['miller-matrix','Miller Matrix'],['carbon-black','Carbon Black'],['cyber-neon','Cyber Neon'],['studio-pro','Studio Pro']]; const themeOptions = limits.themes ? allThemeOptions.filter((x:any)=>(limits.themes as string[]).includes(x[0])) : allThemeOptions; return <section><h2>{t.settingsTitle}</h2><p className="sub">{t.settingsSub}</p><div className="settings-grid"><div className="panel"><h3>{t.general}</h3><Select label={t.language} value={settings.language} options={[['pt-BR','🇧🇷 Português (Brasil)'],['en-US','🇺🇸 English'],['es-ES','🇪🇸 Español']]} onChange={(v)=>updateSettings({language:v})}/><h3>{t.startup}</h3><Check label={t.startWithWindows} checked={settings.startWithWindows} onChange={(v)=>updateSettings({startWithWindows:v})}/><Check label={t.startMinimized} checked={settings.startMinimized} onChange={(v)=>updateSettings({startMinimized:v})}/><Check label={t.closeToTray} checked={settings.closeToTray} onChange={(v)=>updateSettings({closeToTray:v})}/><h3>{t.updates}</h3><Check label={t.checkUpdates} checked={settings.checkUpdates} onChange={(v)=>updateSettings({checkUpdates:v})}/><Select label={t.channel} value={settings.updateChannel} options={['stable','beta','dev']} onChange={(v)=>updateSettings({updateChannel:v})}/><button onClick={checkUpdatesNow} disabled={updateLoading}>{updateLoading?t.running:(t.checkNow || 'Verificar agora')}</button>{updateInfo && <div className="update-box">{row(t.currentVersion, updateInfo.currentVersion)}{row(t.latestVersion, updateInfo.latestVersion, updateInfo.updateAvailable?'warn':'ok')}<p className="hint">{translateMessage(updateInfo.message, t)}</p>{(updateInfo.notes||[]).map((note:string,i:number)=><small className="field-help" key={i}>{translateMessage(note, t)}</small>)}</div>}</div><div className="panel"><h3>{t.appearance}</h3><Select label={t.theme} value={settings.theme} options={themeOptions} onChange={(v)=>updateSettings({theme:v})}/><Select label={t.scale} value={settings.scale} options={[90,100,110,125]} onChange={(v)=>updateSettings({scale:Number(v)})}/><Check label={t.animations} checked={settings.animations} onChange={(v)=>updateSettings({animations:v})}/><Check label={t.transparency} checked={settings.transparency} onChange={(v)=>updateSettings({transparency:v})}/></div><div className="panel"><h3>{t.audio}</h3><div className="quality-grid"><QualityCard active={settings.qualityMode==='lowLatency'} title={t.lowLatency} help={t.lowLatencyHelp} onClick={()=>applyQuality('lowLatency')}/><QualityCard active={settings.qualityMode==='balanced'} title={t.balanced} help={t.balancedHelp} onClick={()=>applyQuality('balanced')}/><QualityCard active={settings.qualityMode==='quality'} title={t.maxQuality} help={t.maxQualityHelp} onClick={()=>applyQuality('quality')}/></div><button onClick={()=>updateSettings({showAdvancedAudio:!settings.showAdvancedAudio})}>{settings.showAdvancedAudio?t.hideAdvanced:t.showAdvanced}</button>{settings.showAdvancedAudio && <div><Select label={t.engine} value={settings.engine} options={[['auto',t.automatic],['wasapi_shared','WASAPI Shared'],['wasapi_exclusive','WASAPI Exclusive'],['asio',t.futureAsio]]} onChange={(v)=>updateSettings({engine:v})}/><SmallHelp text={t.bufferHelp}/><Select label={t.buffer} value={settings.buffer} options={[64,128,256,512]} onChange={(v)=>updateSettings({buffer:Number(v)})}/><SmallHelp text={t.sampleRateHelp}/><Select label={t.sampleRate} value={settings.sampleRate} options={[44100,48000,96000]} onChange={(v)=>updateSettings({sampleRate:Number(v)})}/><SmallHelp text={t.aiHelp}/><Select label={t.aiEngine} value={settings.micEngine} options={[['off',t.disabled],['rnnoise','RNNoise'],['webrtc','WebRTC'],['deepfilternet','DeepFilterNet']]} onChange={(v)=>updateSettings({micEngine:v})}/></div>}</div><div className="panel"><h3>{t.advanced}</h3><p className="hint">{t.performanceHelp}</p>{row(t.latency, latencyText(perf,t), 'warn')}{row(t.buffer, `${settings.buffer} ${t.samples}`)}{row(t.sampleRate, `${settings.sampleRate} Hz`)}{row(t.logsPath, logsPath || '—')}<button onClick={openLogs}>{t.openLogs}</button><button onClick={runAudit} disabled={debugLoading}>{debugLoading?t.running:t.runAudit}</button></div></div></section>; }
+function SettingsPanel({licenseState, t, settings, updateSettings, perf, logsPath, runAudit, openLogs, debugLoading, applyQuality, updateInfo, updateLoading, checkUpdatesNow}: any) { const limits = planLimits(licenseState); const allThemeOptions = [['miller-blue','Miller Blue'],['miller-red','Miller Red'],['miller-purple','Miller Purple'],['miller-green','Miller Green'],['miller-gold','Miller Gold'],['miller-orange','Miller Orange'],['miller-ice','Miller Ice'],['miller-carbon','Miller Carbon'],['miller-cyberpunk','Miller Cyberpunk'],['miller-midnight','Miller Midnight'],['miller-matrix','Miller Matrix'],['carbon-black','Carbon Black'],['cyber-neon','Cyber Neon'],['studio-pro','Studio Pro']]; const themeOptions = limits.themes ? allThemeOptions.filter((x:any)=>(limits.themes as string[]).includes(x[0])) : allThemeOptions; return <section><h2>{t.settingsTitle}</h2><p className="sub">{t.settingsSub}</p><div className="settings-grid"><div className="panel"><h3>{t.general}</h3><Select label={t.language} value={settings.language} options={[['pt-BR','🇧🇷 Português (Brasil)'],['en-US','🇺🇸 English'],['es-ES','🇪🇸 Español']]} onChange={(v)=>updateSettings({language:v})}/><h3>{t.startup}</h3><Check label={t.startWithWindows} checked={settings.startWithWindows} onChange={(v)=>updateSettings({startWithWindows:v})}/><Check label={t.startMinimized} checked={settings.startMinimized} onChange={(v)=>updateSettings({startMinimized:v})}/><Check label={t.closeToTray} checked={settings.closeToTray} onChange={(v)=>updateSettings({closeToTray:v})}/><h3>{t.updates}</h3><Check label={t.checkUpdates} checked={settings.checkUpdates} onChange={(v)=>updateSettings({checkUpdates:v})}/><Select label={t.channel} value={settings.updateChannel} options={['stable','beta','dev']} onChange={(v)=>updateSettings({updateChannel:v})}/><button onClick={checkUpdatesNow} disabled={updateLoading}>{updateLoading?t.running:(t.checkNow || 'Verificar agora')}</button>{updateInfo && <div className="update-box">{row(t.currentVersion, updateInfo.currentVersion)}{row(t.latestVersion, updateInfo.latestVersion, updateInfo.updateAvailable?'warn':'ok')}<p className="hint">{translateMessage(updateInfo.message, t)}</p>{(updateInfo.notes||[]).map((note:string,i:number)=><small className="field-help" key={i}>{translateMessage(note, t)}</small>)}</div>}</div><div className="panel"><h3>{t.appearance}</h3><Select label={t.theme} value={settings.theme} options={themeOptions} onChange={(v)=>updateSettings({theme:v})}/><Select label={t.scale} value={settings.scale} options={[90,100,110,125]} onChange={(v)=>updateSettings({scale:Number(v)})}/><Check label={t.animations} checked={settings.animations} onChange={(v)=>updateSettings({animations:v})}/><Check label={t.transparency} checked={settings.transparency} onChange={(v)=>updateSettings({transparency:v})}/></div><div className="panel"><h3>{t.audio}</h3><div className="quality-grid"><QualityCard active={settings.qualityMode==='lowLatency'} title={t.lowLatency} help={t.lowLatencyHelp} onClick={()=>applyQuality('lowLatency')}/><QualityCard active={settings.qualityMode==='balanced'} title={t.balanced} help={t.balancedHelp} onClick={()=>applyQuality('balanced')}/><QualityCard active={settings.qualityMode==='quality'} title={t.maxQuality} help={t.maxQualityHelp} onClick={()=>applyQuality('quality')}/></div><button onClick={()=>updateSettings({showAdvancedAudio:!settings.showAdvancedAudio})}>{settings.showAdvancedAudio?t.hideAdvanced:t.showAdvanced}</button>{settings.showAdvancedAudio && <div><Select label={t.engine} value={settings.engine} options={[['auto',t.automatic],['wasapi_shared','WASAPI Shared'],['wasapi_exclusive','WASAPI Exclusive'],['asio',t.futureAsio]]} onChange={(v)=>updateSettings({engine:v})}/><SmallHelp text={t.bufferHelp}/><Select label={t.buffer} value={settings.buffer} options={[64,128,256,512]} onChange={(v)=>updateSettings({buffer:Number(v)})}/><SmallHelp text={t.sampleRateHelp}/><Select label={t.sampleRate} value={settings.sampleRate} options={[44100,48000,96000]} onChange={(v)=>updateSettings({sampleRate:Number(v)})}/><SmallHelp text={t.aiHelp}/><Select label={t.aiEngine} value={settings.micEngine} options={[['off',t.disabled],['rnnoise','RNNoise'],['webrtc','WebRTC'],['deepfilternet','DeepFilterNet']]} onChange={(v)=>updateSettings({micEngine:v})}/></div>}</div><div className="panel"><h3>{t.advanced}</h3><p className="hint">{t.performanceHelp}</p>{row(t.latency, latencyText(perf,t), latencyStatus(n(perf?.roundTripLatencyMs ?? perf?.latencyMs)))}{row(t.inputLatency || 'Input latency', `${n(perf?.inputLatencyMs)} ms`, latencyStatus(n(perf?.inputLatencyMs)))}{row(t.outputLatency || 'Output latency', `${n(perf?.outputLatencyMs)} ms`, latencyStatus(n(perf?.outputLatencyMs)))}{row(t.buffer, `${settings.buffer} ${t.samples}`)}{row(t.sampleRate, `${settings.sampleRate} Hz`)}{row(t.logsPath, logsPath || '—')}<button onClick={openLogs}>{t.openLogs}</button><button onClick={runAudit} disabled={debugLoading}>{debugLoading?t.running:t.runAudit}</button></div></div></section>; }
 function Support({licenseState, t, state, debug, logsPath, inputs, outputs, profiles, routes, runAudit, openLogs, debugLoading}: any) {
   const [ticketContact, setTicketContact] = useState('');
   const [ticketCategory, setTicketCategory] = useState('bug');
@@ -613,7 +632,7 @@ function StudioPanel({t, apps, sessions, profiles, routes, state, perf, licenseS
   const liveRows = (sessions && sessions.length ? sessions : groupAudioRows(apps || [])).slice(0, 12);
   const [noiseResult, setNoiseResult] = useState('');
   const exportProfiles = () => {
-    const payload = JSON.stringify({ version: 'V6.3', exportedAt: new Date().toISOString(), profiles }, null, 2);
+    const payload = JSON.stringify({ version: 'V6.6 Complete Routing Update', exportedAt: new Date().toISOString(), profiles }, null, 2);
     navigator.clipboard?.writeText(payload);
     alert(t.exportProfiles + ' OK');
   };
@@ -626,7 +645,7 @@ function StudioPanel({t, apps, sessions, profiles, routes, state, perf, licenseS
   };
   return <section><h2>{t.studioTitle}</h2><p className="sub">{t.studioSub}</p>
     <div className="grid3">
-      <div className="panel"><h3>{t.liveDashboard}</h3>{row(t.health, t.excellent, 'ok')}{row(t.cpu, `${n(perf?.cpu)}%`)}{row(t.latency, latencyText(perf,t), 'warn')}{row(t.apps, liveRows.length)}{row(t.remaining, licenseState?.activated ? '∞' : formatTimeMMSS(licenseState?.freeSecondsLeft || 0))}</div>
+      <div className="panel"><h3>{t.liveDashboard}</h3>{row(t.health, t.excellent, 'ok')}{row(t.cpu, `${n(perf?.cpu)}%`)}{row(t.latency, latencyText(perf,t), latencyStatus(n(perf?.roundTripLatencyMs ?? perf?.latencyMs)))}{row(t.apps, liveRows.length)}{row(t.remaining, licenseState?.activated ? '∞' : formatTimeMMSS(licenseState?.freeSecondsLeft || 0))}</div>
       <div className="panel"><h3>{t.smartRules}</h3><table><tbody>{[['Discord','Discord'],['OBS','Streaming'],['Jogos com Voz','Jogos com Voz'],['Chrome','Uso Geral'],['Padrão',t.defaultProfile]].map((r:any)=><tr key={r[0]}><td>{r[0]}</td><td><b className="ok">{r[1]}</b></td></tr>)}</tbody></table><Check label={t.applyAutomatically} checked={true} onChange={()=>{}}/><Check label={t.askBeforeSwitch} checked={false} onChange={()=>{}}/></div>
       <div className="panel"><h3>{t.backupProfiles}</h3><button onClick={exportProfiles}>{t.exportProfiles}</button><button onClick={()=>alert(t.importProfiles)}>{t.importProfiles}</button><p className="hint">.msp / JSON local · {t.settingsSaved}</p></div>
     </div>
@@ -634,7 +653,7 @@ function StudioPanel({t, apps, sessions, profiles, routes, state, perf, licenseS
       <MicTestPanel t={t}/>
       <div className="panel"><h3>{t.noiseAnalyzer}</h3><p className="hint">{t.analyzeEnvironment}</p><button onClick={analyze}>{t.analyzeEnvironment}</button>{noiseResult && <p className="hint"><b>{t.analyzerResult}:</b><br/>{noiseResult}</p>}</div>
     </div>
-    <div className="panel"><h3>{t.mixer}</h3><p className="hint">{t.mixerRealHelp || 'Mixer conectado às sessões WASAPI: volume, mute, solo e rota ficam salvos por aplicativo. A rota ainda prepara o motor A1-A5 da V6.6.'}</p><table><thead><tr><th>{t.apps}</th><th>{t.volume}</th><th>{t.vuMeter}</th><th>{t.route}</th><th>{t.mute}</th><th>{t.solo}</th></tr></thead><tbody>{liveRows.map((a:any,i:number)=><tr key={`${a.key || a.process}-${i}`} className={a.recent?'recent-row':''}><td><b>{a.app}</b><small>{a.process}{a.recent ? ` · ${t.recentApp || 'Recente'}` : ''}</small></td><td><input className="volume-slider" type="range" min="0" max="100" value={n(isEffectivelyMuted(a) ? 0 : a.volume)} onChange={e=>updateMixerRow(a,{volume:Number(e.target.value), muted:false})}/><small>{n(isEffectivelyMuted(a) ? 0 : a.volume)}%</small></td><td><span className="mini-bar"><i style={{width:`${n(a.peak ?? a.activity)}%`}}/></span></td><td><select className="route-select" value={a.route || 'A1'} onChange={e=>updateMixerRow(a,{route:e.target.value})}>{['A1','A2','A3','A4','A5'].map(x=><option key={x}>{x}</option>)}</select></td><td><button className={isEffectivelyMuted(a)?'danger active':''} onClick={()=>updateMixerRow(a,{muted:!a.muted})}>{isEffectivelyMuted(a) ? (t.unmute || 'Unmute') : t.mute}</button></td><td><button className={a.solo?'active':''} onClick={()=>updateMixerRow(a,{solo:!a.solo})}>{t.solo}</button></td></tr>)}</tbody></table></div>
+    <div className="panel"><h3>{t.mixer}</h3><p className="hint">{t.mixerRealHelp || 'Mixer conectado às sessões WASAPI: volume, mute, solo e rota ficam salvos por aplicativo. O motor A1-A5 agora persiste a matriz por aplicativo e prepara o Virtual Driver da V6.7.'}</p><table><thead><tr><th>{t.apps}</th><th>{t.volume}</th><th>{t.vuMeter}</th><th>{t.route}</th><th>{t.mute}</th><th>{t.solo}</th></tr></thead><tbody>{liveRows.map((a:any,i:number)=><tr key={`${a.key || a.process}-${i}`} className={a.recent?'recent-row':''}><td><b>{a.app}</b><small>{a.process}{a.recent ? ` · ${t.recentApp || 'Recente'}` : ''}</small></td><td><input className="volume-slider" type="range" min="0" max="100" value={n(isEffectivelyMuted(a) ? 0 : a.volume)} onChange={e=>updateMixerRow(a,{volume:Number(e.target.value), muted:false})}/><small>{n(isEffectivelyMuted(a) ? 0 : a.volume)}%</small></td><td><span className="mini-bar"><i style={{width:`${n(a.peak ?? a.activity)}%`}}/></span></td><td><div className="route-buttons">{ROUTE_KEYS.map((k,idx)=>{ const routing=normalizeRoute(a.routing); return <button key={k} className={routing[k]?'circle on':'circle'} onClick={()=>updateMixerRow(a,{routing:patchRoute(routing,k,!routing[k])})}>A{idx+1}</button>; })}</div><small>{routeLabel(a.routing)}</small></td><td><button className={isEffectivelyMuted(a)?'danger active':''} onClick={()=>updateMixerRow(a,{muted:!a.muted})}>{isEffectivelyMuted(a) ? (t.unmute || 'Unmute') : t.mute}</button></td><td><button className={a.solo?'active':''} onClick={()=>updateMixerRow(a,{solo:!a.solo})}>{t.solo}</button></td></tr>)}</tbody></table></div>
     <div className="panel"><h3>{t.analytics}</h3>{row(t.profileCurrent, profiles?.[0] ? profileName(profiles[0],t) : '—')}{row(t.routesStatus, routes?.length || 0)}{row(t.lastRead, state?.timestamp || 'N/A')}</div>
   </section>;
 }

@@ -123,6 +123,9 @@ struct PerformanceState {
     sample_rate: u32,
     buffer: u32,
     latency_ms: f64,
+    input_latency_ms: f64,
+    output_latency_ms: f64,
+    round_trip_latency_ms: f64,
     cpu: u32,
 }
 
@@ -589,7 +592,7 @@ fn build_state(preferred_input_id: Option<String>, preferred_output_id: Option<S
         warning,
         hardware: HardwareState { inputs, outputs, preferred_input, preferred_output },
         apps,
-        performance: PerformanceState { sample_rate: 48000, buffer: 128, latency_ms: 0.0, cpu: 0 },
+        performance: PerformanceState { sample_rate: 48000, buffer: 128, latency_ms: 12.0, input_latency_ms: 4.0, output_latency_ms: 8.0, round_trip_latency_ms: 12.0, cpu: 0 },
         logs_path: logs_dir().display().to_string(),
         raw_device_lines: raw_lines,
     }
@@ -1157,6 +1160,28 @@ fn set_all_audio_sessions_muted(muted: bool) -> Result<usize, String> {
     set_all_wasapi_sessions_mute(muted)
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct RoutingPayload {
+    a1: Option<bool>,
+    a2: Option<bool>,
+    a3: Option<bool>,
+    a4: Option<bool>,
+    a5: Option<bool>,
+}
+
+#[tauri::command]
+fn set_audio_session_route(pid: u32, route: String, routing: RoutingPayload) -> Result<(), String> {
+    append_log(
+        "routing_core.log",
+        &format!(
+            "V6.6 route request pid={} route={} A1={:?} A2={:?} A3={:?} A4={:?} A5={:?}",
+            pid, route, routing.a1, routing.a2, routing.a3, routing.a4, routing.a5
+        ),
+    );
+    Ok(())
+}
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -1261,7 +1286,8 @@ pub fn run() {
             get_audio_sessions,
             set_audio_session_volume,
             set_audio_session_muted,
-            set_all_audio_sessions_muted
+            set_all_audio_sessions_muted,
+            set_audio_session_route
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

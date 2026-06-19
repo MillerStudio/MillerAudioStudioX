@@ -61,3 +61,11 @@ body:not([data-animations="true"]) .main section{animation:none!important}
 .recent-row td{border-bottom-style:dashed}
 button.active{background:color-mix(in srgb,var(--accent,#21e4ff) 34%,transparent);border-color:var(--accent,#21e4ff)}
 button.danger,button.danger.active{border-color:var(--danger,#ff4b7b);color:#fff;background:color-mix(in srgb,var(--danger,#ff4b7b) 24%,transparent)}
+
+/* V6.6 Complete Routing Update */
+.route-buttons{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.route-buttons .circle{min-width:34px;height:30px;border-radius:999px;padding:0 8px;font-size:12px}
+.route-buttons .circle.on{font-weight:800;box-shadow:0 0 0 1px rgba(255,255,255,.18) inset}
+.bus-select small{display:block;opacity:.75;margin-top:4px;line-height:1.25}
+.latency-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+@media (max-width:900px){.latency-grid{grid-template-columns:1fr}.route-buttons{gap:4px}}
