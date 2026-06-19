@@ -1,14 +1,18 @@
-# ROADMAP
+# Roadmap
 
-## Concluído
+## Atual
 
-- V6.5.3 Stability & Performance
-- V6.6 Complete Routing Update
-- V6.6.4 Routing Cleanup & UX Sync
+V6.6.5 Device Health & Channel View
 
 ## Próximo
 
-### V6.7 Virtual Driver
-- Miller Virtual Microphone
-- Miller Virtual Speakers
-- Base para roteamento real entre apps e dispositivos virtuais
+V6.6.6 Latency Real Monitor
+- Melhorar medição real/contínua de latência.
+- Separar entrada, saída e round trip com histórico.
+
+## Depois
+
+V6.7 Virtual Driver
+- Miller Virtual Microphone.
+- Miller Virtual Speakers.
+- Roteamento físico real multi-dispositivo.

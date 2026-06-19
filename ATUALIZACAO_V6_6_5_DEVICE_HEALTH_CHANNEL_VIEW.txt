@@ -1,0 +1,58 @@
+Miller Audio Studio X - V6.6.5 Device Health & Channel View
+
+OBJETIVO
+Corrigir a lógica de dispositivos, deixar apps por sessão, melhorar a visualização por canal A1-A5 e preparar o roteamento real para a fase do driver virtual.
+
+ATUALIZADO
+- Apps detectados agora são mantidos apenas na sessão atual do Miller.
+- Ao reiniciar o Miller/PC, a lista de apps detectados começa vazia.
+- Configurações antigas por aplicativo continuam salvas para sempre por processo.
+- Quando o app voltar a emitir áudio, volume/mute/solo/rotas são restaurados automaticamente.
+- Lista de apps fica estável em ordem alfabética.
+- Apps sem áudio aparecem em vermelho/desabilitados.
+- Rota sem nenhum canal A1-A5 marcado passa a mutar/bloquear a sessão WASAPI.
+- Dispositivos configurados que não estão disponíveis não somem mais: ficam salvos, marcados como indisponíveis e piscando em vermelho.
+- Botão Reconectar faz re-scan completo com delay para USB.
+- Tela Dispositivos ganhou visão por canal A1-A5:
+  A1 mostra apps roteados para A1;
+  A2 mostra apps roteados para A2;
+  se um app estiver em dois canais, aparece nos dois.
+- Seleção de dispositivos mostra apenas dispositivos disponíveis.
+- Limpeza dos arquivos ATUALIZACAO_*.txt antigos: somente este arquivo fica na raiz.
+- README/docs atualizados para V6.6.5.
+
+LIMITAÇÃO TÉCNICA ATUAL
+- Sem o Miller Virtual Driver, o sistema ainda não consegue duplicar áudio real para múltiplas saídas físicas independentes como VoiceMeeter.
+- Nesta versão, o comportamento real implementado é: sem rota marcada = áudio bloqueado/mutado.
+- Roteamento físico multi-dispositivo real será parte da V6.7 Virtual Driver.
+
+COMO INICIAR
+npm install
+npm run tauri dev
+
+COMO GERAR BUILD
+npm run tauri build
+
+COMANDOS GIT
+cd C:\Programas\MillerAudioStudioX
+git status
+git add .
+git commit -m "V6.6.5 Device Health Channel View"
+git push
+git tag v6.6.5
+git push origin v6.6.5
+
+CHECKLIST DE TESTES
+[ ] Abrir Spotify/Chrome/Discord e confirmar sessões no Miller.
+[ ] Confirmar que a lista fica em ordem alfabética e não muda de posição sozinha.
+[ ] Parar o áudio de um app e confirmar que ele fica vermelho/desabilitado na sessão atual.
+[ ] Fechar e abrir o Miller e confirmar que a lista de apps começa vazia.
+[ ] Abrir novamente o mesmo app e confirmar que volume/mute/solo/rotas antigas voltam.
+[ ] Remover todas as rotas A1-A5 de um app e confirmar que o áudio é bloqueado.
+[ ] Marcar A1 novamente e confirmar que o áudio volta, se o app não estiver mutado manualmente.
+[ ] Configurar A1-A5 em Dispositivos.
+[ ] Desconectar um dispositivo configurado e confirmar alerta vermelho piscando.
+[ ] Clicar em Reconectar e confirmar re-scan com delay.
+[ ] Confirmar visão por canal A1-A5 mostrando os apps em cada canal.
+[ ] Confirmar que app em A1 + A2 aparece nos dois canais.
+[ ] Confirmar PT-BR, EN-US e ES-ES.

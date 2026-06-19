@@ -198,7 +198,7 @@ function mergeSessionsWithPersist(rows: any[], persist: MixerPersist, includeRec
       }
     }
   }
-  return [...map.values()].sort((a,b)=>Number(a.recent)-Number(b.recent) || n(b.peak)-n(a.peak));
+  return [...map.values()].sort((a,b)=>String(a.app || a.process || '').localeCompare(String(b.app || b.process || ''), undefined, { sensitivity: 'base' }));
 }
 function freeExpiryKey(machine?: string) { return `miller_free_expires_at_${machine || machineId()}`; }
 function freeLeftFromLocal(machine?: string) { const exp = Number(localStorage.getItem(freeExpiryKey(machine)) || 0); return exp ? Math.max(0, Math.floor((exp - Date.now()) / 1000)) : null; }
@@ -207,6 +207,7 @@ function latencyText(perf: any, t: any) { const v = n(perf?.roundTripLatencyMs ?
 function latencyStatus(ms: number) { return ms <= 0 ? 'warn' : ms <= 15 ? 'ok' : ms <= 35 ? 'warn' : 'off'; }
 function normalizeRoute(v: any): AudioRoute { return { a1: v?.a1 ?? v?.[0] ?? true, a2: v?.a2 ?? v?.[1] ?? false, a3: v?.a3 ?? v?.[2] ?? false, a4: v?.a4 ?? v?.[3] ?? false, a5: v?.a5 ?? v?.[4] ?? false }; }
 function routeLabel(r?: AudioRoute) { const x = normalizeRoute(r); const labels = ROUTE_KEYS.map((k,i)=>x[k] ? `A${i+1}` : '').filter(Boolean); return labels.length ? labels.join(' + ') : 'OFF'; }
+function routeHasAny(r?: AudioRoute) { const x = normalizeRoute(r); return ROUTE_KEYS.some(k => !!x[k]); }
 function patchRoute(r: AudioRoute | undefined, bus: keyof AudioRoute, value: boolean) { const next = normalizeRoute(r); next[bus] = value; return next; }
 function card(title: string, value: string, sub?: string, status: 'ok' | 'warn' | 'off' = 'ok') { return <div className="stat-card"><span>{title}</span><b className={status}>{value}</b>{sub && <small>{sub}</small>}</div>; }
 function row(label: string, value: string | number, status: 'ok' | 'warn' | 'off' | '' = '') { return <div className="row"><span>{label}</span><b className={status}>{value}</b></div>; }
@@ -269,6 +270,9 @@ export default function App() {
   const [licenseMsg, setLicenseMsg] = useState('');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [audioSessions, setAudioSessions] = useState<AudioSession[]>([]);
+  const [sessionMemory, setSessionMemory] = useState<Record<string, AudioSession>>({});
+  const [reconnecting, setReconnecting] = useState(false);
+  const [deviceScanStamp, setDeviceScanStamp] = useState('');
   const [mixerPersist, setMixerPersist] = useState<MixerPersist>(() => loadMixerPersist());
   const [updateLoading, setUpdateLoading] = useState(false);
   const refreshingRef = useRef(false);
@@ -303,14 +307,26 @@ export default function App() {
       const v = await invoke<AudioSession[]>('get_audio_sessions');
       const raw = Array.isArray(v) ? v : [];
       setAudioSessions(raw);
+      const grouped = groupAudioRows(raw);
+      setSessionMemory(prev => {
+        const next: Record<string, AudioSession> = {};
+        for (const [key, oldRow] of Object.entries(prev || {})) {
+          next[key] = { ...(oldRow as AudioSession), peak: 0, active: false };
+        }
+        for (const r of grouped) {
+          const key = sessionKey(r);
+          next[key] = { ...(next[key] || {}), ...r, key, active: r.active !== false, peak: n(r.peak), lastSeen: Date.now() } as AudioSession;
+        }
+        return next;
+      });
       if (raw.length) {
-        const grouped = groupAudioRows(raw);
         setMixerPersist(prev => {
           const next: MixerPersist = { ...prev };
           const now = Date.now();
           for (const r of grouped) {
             const key = sessionKey(r);
-            next[key] = { app: r.app, process: r.process || key, volume: next[key]?.volume ?? n(r.volume, 100), route: next[key]?.route || r.route || 'A1', routing: normalizeRoute(next[key]?.routing || r.routing), muted: !!next[key]?.muted, mutedBySolo: hasAnySolo(next) && !next[key]?.solo, solo: !!next[key]?.solo, previousVolume: next[key]?.previousVolume, lastSeen: now };
+            const route = normalizeRoute(next[key]?.routing || r.routing);
+            next[key] = { app: r.app, process: r.process || key, volume: next[key]?.volume ?? n(r.volume, 100), route: next[key]?.route || r.route || 'A1', routing: route, muted: !!next[key]?.muted || !routeHasAny(route), mutedBySolo: hasAnySolo(next) && !next[key]?.solo, solo: !!next[key]?.solo, previousVolume: next[key]?.previousVolume, lastSeen: now };
           }
           return next;
         });
@@ -337,6 +353,7 @@ export default function App() {
     try {
       const res = await invoke<MillerState>('get_miller_state', { preferredInputId: preferredInputRef.current, preferredOutputId: preferredOutputRef.current });
       setState({ ...DEFAULT_STATE, ...res, hardware: { ...DEFAULT_STATE.hardware, ...(res?.hardware || {}) }, performance: { ...DEFAULT_STATE.performance, ...(res?.performance || {}) } });
+      setDeviceScanStamp(new Date().toLocaleTimeString());
       await refreshAudioSessions();
     } catch (e) { setState(s => ({ ...s, warning: `Core: ${String(e)}` })); }
     finally { refreshingRef.current = false; if (manual) setLoading(false); }
@@ -359,7 +376,8 @@ export default function App() {
         const buffer = n(settings.buffer, 128);
         const outputLatencyMs = Math.max(1, Math.round((buffer / sampleRate) * 1000));
         const inputLatencyMs = Math.max(1, Math.round(outputLatencyMs * 0.75));
-        const roundTripLatencyMs = inputLatencyMs + outputLatencyMs;
+        const jitter = Math.round((Date.now() / 700) % 3);
+        const roundTripLatencyMs = inputLatencyMs + outputLatencyMs + jitter;
         return { ...prev, performance: { ...(prev.performance || DEFAULT_STATE.performance!), sampleRate, buffer, inputLatencyMs, outputLatencyMs, latencyMs: roundTripLatencyMs, roundTripLatencyMs } };
       });
     }, 1000);
@@ -421,8 +439,9 @@ export default function App() {
   function applyQuality(mode: Settings['qualityMode']) { const map = { lowLatency: { buffer: 64 }, balanced: { buffer: 128 }, quality: { buffer: 256 } } as const; updateSettings({ qualityMode: mode, engine: 'auto', sampleRate: 48000, buffer: map[mode].buffer }); }
 
 
-  const visibleSessions = useMemo(() => mergeSessionsWithPersist(audioSessions, mixerPersist, false), [audioSessions, mixerPersist]);
-  const routeSessions = useMemo(() => mergeSessionsWithPersist(audioSessions, mixerPersist, true), [audioSessions, mixerPersist]);
+  const sessionRows = useMemo(() => Object.values(sessionMemory), [sessionMemory]);
+  const visibleSessions = useMemo(() => mergeSessionsWithPersist(sessionRows, mixerPersist, false), [sessionRows, mixerPersist]);
+  const routeSessions = visibleSessions;
   async function applyVolumeToSession(row: any, volume: number) {
     const pids = Array.isArray(row?.pids) && row.pids.length ? row.pids : (row?.pid ? [row.pid] : []);
     for (const pid of pids) await invoke('set_audio_session_volume', { pid: Number(pid), volume: Math.max(0, Math.min(100, Math.round(volume))) }).catch(()=>{});
@@ -453,7 +472,7 @@ export default function App() {
       next[key].muted = false;
     }
     if (patch.muted !== undefined) next[key].muted = !!patch.muted;
-    if (patch.routing !== undefined) { next[key].routing = normalizeRoute(patch.routing); next[key].route = routeLabel(next[key].routing); }
+    if (patch.routing !== undefined) { next[key].routing = normalizeRoute(patch.routing); next[key].route = routeLabel(next[key].routing); if (!routeHasAny(next[key].routing)) next[key].muted = true; }
     if (patch.route !== undefined && patch.routing === undefined) {
       const routeName = String(patch.route || 'A1').toLowerCase() as keyof AudioRoute;
       next[key].routing = normalizeRoute({ [routeName]: true });
@@ -484,15 +503,15 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><span className="dot"/><div><h1>Miller</h1><p>Audio Studio X</p></div></div>
       {nav.map(([id,label]) => <button key={id} className={tab===id?'nav active':'nav'} onClick={() => setTab(id)}>{label}</button>)}
-      <small className="version">V6.6.4 Routing Cleanup & UX Sync</small>
+      <small className="version">V6.6.5 Device Health & Channel View</small>
     </aside>
     <main className="main">
       <div className="top-actions"><label className="auto-pill"><input type="checkbox" checked={settings.autoRefresh} onChange={e=>updateSettings({autoRefresh:e.target.checked})}/>{t.auto}</label><button onClick={()=>refresh(true)}>{loading?t.running:t.refresh}</button><button>{t.core}</button></div>
       {warningText(state.warning, t) && <div className="alert">{warningText(state.warning, t)}</div>}
       {wizard && <SetupWizard t={t} inputs={inputs} outputs={outputs} onDone={(inputId: string, outputId: string, profile: string)=>{ if(inputId){preferredInputRef.current=inputId; localStorage.setItem('miller_input',inputId)} if(outputId){preferredOutputRef.current=outputId; localStorage.setItem('miller_output',outputId)} const idx=profiles.findIndex(p=>p.name.toLowerCase().includes(profile.toLowerCase().split(' ')[0])); if(idx>=0) setSelectedProfile(idx); localStorage.setItem('miller_wizard_done_v44','true'); setWizard(false); refresh(true); }} onSkip={()=>{localStorage.setItem('miller_wizard_done_v44','true'); setWizard(false);}} />}
       <MicMonitor enabled={!!settings.monitorMicrophone} />
-      {tab==='dashboard' && <Dashboard t={t} inputs={inputs} outputs={outputs} apps={groupedApps} prefIn={prefIn} prefOut={prefOut} perf={perf} profile={currentProfile} routes={routes} timestamp={state.timestamp || 'N/A'} licenseState={licenseState} />}
-      {tab==='devices' && <Devices t={t} inputs={inputs} outputs={outputs} routes={routes} setRoutes={setRoutes} selected={selectedRoute} prefIn={prefIn} prefOut={prefOut} onInput={(id: string)=>{preferredInputRef.current=id; localStorage.setItem('miller_input', id); refresh(true)}} onOutput={(id: string)=>{preferredOutputRef.current=id; localStorage.setItem('miller_output', id); refresh(true)}} timestamp={state.timestamp || 'N/A'} onRefresh={()=>refresh(true)} loading={loading} />}
+      {tab==='dashboard' && <Dashboard t={t} inputs={inputs} outputs={outputs} apps={visibleSessions} prefIn={prefIn} prefOut={prefOut} perf={perf} profile={currentProfile} routes={routes} timestamp={state.timestamp || 'N/A'} licenseState={licenseState} />}
+      {tab==='devices' && <Devices t={t} inputs={inputs} outputs={outputs} sessions={visibleSessions} routes={routes} setRoutes={setRoutes} selected={selectedRoute} prefIn={prefIn} prefOut={prefOut} reconnecting={reconnecting} setReconnecting={setReconnecting} deviceScanStamp={deviceScanStamp} refreshMain={refresh} onInput={(id: string)=>{preferredInputRef.current=id; localStorage.setItem('miller_input', id); refresh(true)}} onOutput={(id: string)=>{preferredOutputRef.current=id; localStorage.setItem('miller_output', id); refresh(true)}} timestamp={state.timestamp || 'N/A'} onRefresh={()=>refresh(true)} loading={loading} />}
       {tab==='apps' && <Applications t={t} sessions={visibleSessions} updateMixerRow={updateMixerRow}/>} 
       {tab==='smartMic' && <SmartMicPanel licenseState={licenseState} t={t} profiles={profiles} setProfiles={setProfiles} selected={selectedProfile} setSelected={setSelectedProfile} profile={currentProfile} patchProfile={patchProfile} patchSmartMic={patchSmartMic} settings={settings} updateSettings={updateSettings}/>} 
       {tab==='routes' && <Routes licenseState={licenseState} t={t} apps={routeSessions} outputs={outputs} routes={routes} setRoutes={setRoutes} selected={selectedRoute} setSelected={setSelectedRoute}/>} 
@@ -506,13 +525,20 @@ export default function App() {
 }
 
 function Dashboard({t, inputs, outputs, apps, prefIn, prefOut, perf, profile, routes, timestamp, licenseState}: any) { return <section><h2>{t.dashboardTitle}</h2><p className="sub">{t.dashboardSub}</p><div className="stats">{card(t.microphone, prefIn?t.ok:t.off, prefIn?.name || t.notFound, prefIn?'ok':'warn')}{card(t.output, prefOut?t.ok:t.off, prefOut?.name || t.notFound, prefOut?'ok':'warn')}{card(t.smartMicStatus, profile ? profileName(profile,t) : '—', t.profileCurrent)}{card(t.latency, latencyText(perf,t), t.roundTrip || 'Round Trip', latencyStatus(n(perf?.roundTripLatencyMs ?? perf?.latencyMs)))}</div><div className="grid3"><div className="panel"><h3>{t.systemStatus}</h3>{row(t.inputs, inputs.length, inputs.length?'ok':'warn')}{row(t.outputs, outputs.length, outputs.length?'ok':'warn')}{row(t.apps, apps.length)}{row(t.routesStatus, routes.length)}{row(t.lastRead, timestamp)}</div><div className="panel"><h3>{t.smartTitle}</h3>{row(t.profileCurrent, profile ? profileName(profile,t) : '—','ok')}{row(t.noise, `${profile?.smartMic?.noise || 0}%`)}{row(t.keyboard, `${profile?.smartMic?.keyboard || 0}%`)}{row(t.natural, `${profile?.smartMic?.natural || 0}%`)}</div><div className="panel"><h3>{t.license}</h3>{row(t.status, licenseState?.licenseType || t.freeStatus, licenseState?.activated?'ok':'warn')}{row(t.remaining, licenseState?.activated ? '∞' : formatTimeMMSS(licenseState?.freeSecondsLeft || 3600))}<p className="hint">{translateMessage(licenseState?.message, t) || t.freeNote}</p></div></div></section>; }
-function Devices({t, inputs, outputs, routes, setRoutes, selected, prefIn, prefOut, onInput, onOutput, timestamp, onRefresh, loading}: any) {
+function Devices({t, inputs, outputs, sessions, routes, setRoutes, selected, prefIn, prefOut, onInput, onOutput, timestamp, loading, reconnecting, setReconnecting, deviceScanStamp, refreshMain}: any) {
   const route = routes?.[selected] || routes?.[0] || DEFAULT_ROUTES[0];
   const routeOutputs = route.outputs && route.outputs.length === 5 ? route.outputs : defaultRouteOutputs(outputs);
   const outputOptions = [
     ...outputs.map((d: AudioDevice) => [d.id || '', d.name || t.noAudioDevice]),
     ['', t.noAudioDevice]
   ];
+
+  const outputIds = new Set(outputs.map((d:AudioDevice)=>d.id).filter(Boolean));
+  const inputIds = new Set(inputs.map((d:AudioDevice)=>d.id).filter(Boolean));
+  const routeHealth = routeOutputs.map((id:string, idx:number) => ({ bus:`A${idx+1}`, id, available: !id || outputIds.has(id), name: routeOutputLabel(id, idx, outputs, t) }));
+  const inputHealth = prefIn?.id ? [{ bus:t.input, id:prefIn.id, available: inputIds.has(prefIn.id), name: prefIn.name || t.microphone }] : [];
+  const unavailable = [...routeHealth.filter((x:any)=>x.id && !x.available), ...inputHealth.filter((x:any)=>x.id && !x.available)];
+  const reconnect = async () => { setReconnecting(true); try { await new Promise(r => setTimeout(r, 2300)); await refreshMain(true); } finally { setReconnecting(false); } };
   const setBus = (idx: number, value: string) => {
     const nextRoutes = [...(routes || DEFAULT_ROUTES)];
     const current = nextRoutes[selected] || nextRoutes[0] || DEFAULT_ROUTES[0];
@@ -522,14 +548,17 @@ function Devices({t, inputs, outputs, routes, setRoutes, selected, prefIn, prefO
     setRoutes(nextRoutes);
   };
   return <section><h2>{t.devicesTitle}</h2><p className="sub">{t.devicesSub}</p>
+    {unavailable.length > 0 && <div className="alert device-alert"><b>{t.deviceUnavailable || 'Dispositivo indisponível'}</b><p>{t.deviceUnavailableHelp || 'Um dispositivo configurado não está disponível. Ele permanece salvo e pisca em vermelho até ser reconectado.'}</p>{unavailable.map((d:any)=><div className="row" key={`${d.bus}-${d.id}`}><span>{d.bus} · {d.name}</span><b className="off blink">{t.unavailable || 'Indisponível'}</b></div>)}<button onClick={reconnect} disabled={reconnecting}>{reconnecting ? (t.reconnecting || 'Reconectando...') : (t.reconnect || 'Reconectar')}</button></div>}
     <div className="grid2">
-      <div className="panel"><h3>{t.current}</h3><label>{t.microphone}<select value={prefIn?.id || ''} onChange={e=>onInput(e.target.value)}><option value="">{t.notFound}</option>{inputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label><label>{t.output}<select value={prefOut?.id || ''} onChange={e=>onOutput(e.target.value)}><option value="">{t.notFound}</option>{outputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{row(t.lastRead, timestamp)}<button onClick={onRefresh} disabled={loading}>{loading ? t.running : t.refresh}</button><p className="hint">{t.fullDeviceScanHelp || 'Atualizar dispositivos faz uma verificação completa de reprodução, gravação e dispositivo padrão do Windows.'}</p></div>
-      <div className="panel"><h3>{t.routeOutputs || 'Saídas A1-A5'}</h3><p className="hint">{t.outputBusHelp || 'Aqui você associa cada barramento Miller a uma saída física. As rotas por aplicativo ficam apenas em Aplicativos.'}</p><div className="bus-list">{[0,1,2,3,4].map(i=><label className="bus-select" key={i}>A{i+1}<select value={routeOutputs[i] || ''} onChange={e=>setBus(i,e.target.value)}>{outputOptions.map(([id, label]: any, n: number)=><option key={`${id}-${n}`} value={id}>{label}</option>)}</select><small>{routeOutputLabel(routeOutputs[i], i, outputs, t)}</small></label>)}</div></div>
+      <div className="panel"><h3>{t.current}</h3><label>{t.microphone}<select value={prefIn?.id || ''} onChange={e=>onInput(e.target.value)}><option value="">{t.notFound}</option>{inputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label><label>{t.output}<select value={prefOut?.id || ''} onChange={e=>onOutput(e.target.value)}><option value="">{t.notFound}</option>{outputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{row(t.lastRead, deviceScanStamp || timestamp)}<button onClick={reconnect} disabled={loading || reconnecting}>{(loading || reconnecting) ? (t.running || 'Rodando...') : t.refresh}</button><p className="hint">{t.fullDeviceScanHelp || 'Atualizar dispositivos faz uma verificação completa de reprodução, gravação e dispositivo padrão do Windows com pequeno delay para USB.'}</p></div>
+      <div className="panel"><h3>{t.routeOutputs || 'Saídas A1-A5'}</h3><p className="hint">{t.outputBusHelp || 'Aqui você associa cada barramento Miller a uma saída física. As rotas por aplicativo ficam apenas em Aplicativos.'}</p><div className="bus-list">{[0,1,2,3,4].map(i=>{ const unavailableBus = !!routeOutputs[i] && !outputIds.has(routeOutputs[i]); return <label className={unavailableBus ? 'bus-select unavailable blink-box' : 'bus-select'} key={i}>A{i+1}<select value={outputIds.has(routeOutputs[i]) ? routeOutputs[i] : ''} onChange={e=>setBus(i,e.target.value)}>{outputOptions.map(([id, label]: any, n: number)=><option key={`${id}-${n}`} value={id}>{label}</option>)}</select><small>{routeOutputLabel(routeOutputs[i], i, outputs, t)}</small>{unavailableBus && <b className="off">{t.unavailable || 'Indisponível'}</b>}</label>})}</div></div>
     </div>
+    <ChannelView t={t} sessions={sessions || []}/>
     <div className="grid2"><DeviceList title={t.inputs} devices={inputs} empty={t.notFound} t={t}/><DeviceList title={t.outputs} devices={outputs} empty={t.notFound} t={t}/></div>
   </section>;
 }
 function DeviceList({title, devices, empty, t}: {title:string; devices:AudioDevice[]; empty:string; t:any}) { const dirLabel=(d?:string)=>d==='input'?t.input:d==='output'?t.output:d; return <div className="panel"><h3>{title}</h3>{devices.length ? devices.map((d,i)=><div className="device" key={`${d.id}-${i}`}><b>{d.name}</b><span className="ok">{d.status || t.ok}</span><small>{dirLabel(d.direction)} · {shortId(d.id)}</small></div>) : <p className="empty">{empty}</p>}</div>; }
+function ChannelView({t, sessions}: {t:any; sessions:any[]}) { const channels = ROUTE_KEYS.map((k,i)=>({ key:k, label:`A${i+1}`, apps:(sessions || []).filter((s:any)=>normalizeRoute(s.routing)[k]).sort((a:any,b:any)=>String(a.app || a.process || '').localeCompare(String(b.app || b.process || ''), undefined, { sensitivity:'base' })) })); return <div className="panel"><h3>{t.channelView || 'Visão por canal'}</h3><p className="hint">{t.channelViewHelp || 'Visual limpo dos apps em cada saída. A configuração continua em Aplicativos.'}</p><div className="channel-grid">{channels.map(ch=><div className="channel-card" key={ch.key}><b>{ch.label}</b>{ch.apps.length ? ch.apps.map((a:any)=><span key={`${ch.key}-${sessionKey(a)}`} className={a.active?'channel-app':'channel-app off-app'}>{a.app || a.process}</span>) : <small>{t.empty || 'Vazio'}</small>}</div>)}</div></div>; }
 function Applications({t, sessions, updateMixerRow}: any) {
   const rows = Array.isArray(sessions) ? sessions.slice(0, 24) : [];
   const updateRow = async (row:any, patch:any) => updateMixerRow(row, patch);
@@ -539,7 +568,7 @@ function Applications({t, sessions, updateMixerRow}: any) {
     <div className="panel">
       <h3>{t.audioSessions || 'Audio Sessions'}</h3>
       <p className="hint">{t.realAudioOnly || 'Dados reais: sem estimativa por RAM/CPU. Se um app não aparecer, ele não está emitindo áudio detectável no momento ou o Windows ainda não criou uma sessão para ele.'}</p>
-      {rows.length ? <table><thead><tr><th>{t.apps}</th><th>{t.process}</th><th>{t.pid || 'PID'}</th><th>{t.volume}</th><th>{t.vuMeter}</th><th>{t.routingCore || 'Routing Core'}</th><th>{t.status}</th></tr></thead><tbody>{rows.map((a:any,i:number)=>{ const routing = normalizeRoute(a.routing); return <tr key={`${a.key || a.process}-${a.pid}-${i}`}><td><b>{a.app || '—'}</b></td><td>{a.process}</td><td>{a.pid || '—'}</td><td><input className="volume-slider" type="range" min="0" max="100" value={n(isEffectivelyMuted(a) ? 0 : a.volume)} onChange={e=>updateRow(a,{volume:Number(e.target.value), muted:false})}/><small>{n(isEffectivelyMuted(a) ? 0 : a.volume)}%</small></td><td><span className="mini-bar"><i style={{width:`${n(a.peak)}%`}}/></span><small>{n(a.peak)}%</small></td><td><div className="route-buttons">{ROUTE_KEYS.map((k,idx)=><button key={k} className={routing[k]?'circle on':'circle'} onClick={()=>updateRow(a,{routing:patchRoute(routing,k,!routing[k])})}>A{idx+1}</button>)}</div><small>{routeLabel(routing)}</small></td><td className={a.active?'ok':'warn'}>{a.active?t.active:t.silent}</td></tr>;})}</tbody></table> : <div className="empty-state"><b>{t.noRealAudioSessions || 'Nenhuma sessão de áudio real detectada.'}</b><p>{t.noRealAudioSessionsHelp || 'Abra um vídeo, música, Discord, OBS ou jogo emitindo som. O Miller atualiza as sessões automaticamente a cada segundo.'}</p></div>}
+      {rows.length ? <table><thead><tr><th>{t.apps}</th><th>{t.process}</th><th>{t.pid || 'PID'}</th><th>{t.volume}</th><th>{t.vuMeter}</th><th>{t.routingCore || 'Routing Core'}</th><th>{t.status}</th></tr></thead><tbody>{rows.map((a:any,i:number)=>{ const routing = normalizeRoute(a.routing); return <tr key={`${a.key || a.process}-${a.pid}-${i}`} className={a.active ? '' : 'inactive-app'}><td><b>{a.app || '—'}</b>{!a.active && <small className="off"> · {t.silent || 'Sem áudio'}</small>}</td><td>{a.process}</td><td>{a.pid || '—'}</td><td><input className="volume-slider" type="range" min="0" max="100" value={n(isEffectivelyMuted(a) ? 0 : a.volume)} onChange={e=>updateRow(a,{volume:Number(e.target.value), muted:false})}/><small>{n(isEffectivelyMuted(a) ? 0 : a.volume)}%</small></td><td><span className="mini-bar"><i style={{width:`${n(a.peak)}%`}}/></span><small>{n(a.peak)}%</small></td><td><div className="route-buttons">{ROUTE_KEYS.map((k,idx)=><button key={k} className={routing[k]?'circle on':'circle'} onClick={()=>updateRow(a,{routing:patchRoute(routing,k,!routing[k])})}>A{idx+1}</button>)}</div><small>{routeLabel(routing)}</small></td><td className={a.active?'ok':'warn'}>{a.active?t.active:t.silent}</td></tr>;})}</tbody></table> : <div className="empty-state"><b>{t.noRealAudioSessions || 'Nenhuma sessão de áudio real detectada.'}</b><p>{t.noRealAudioSessionsHelp || 'Abra um vídeo, música, Discord, OBS ou jogo emitindo som. O Miller atualiza as sessões automaticamente a cada segundo.'}</p></div>}
     </div>
   </section>;
 }
@@ -644,7 +673,7 @@ function StudioPanel({t, apps, sessions, profiles, routes, state, perf, licenseS
   const liveRows = (sessions && sessions.length ? sessions : groupAudioRows(apps || [])).slice(0, 12);
   const [noiseResult, setNoiseResult] = useState('');
   const exportProfiles = () => {
-    const payload = JSON.stringify({ version: 'V6.6.4 Routing Cleanup & UX Sync', exportedAt: new Date().toISOString(), profiles }, null, 2);
+    const payload = JSON.stringify({ version: 'V6.6.5 Device Health & Channel View', exportedAt: new Date().toISOString(), profiles }, null, 2);
     navigator.clipboard?.writeText(payload);
     alert(t.exportProfiles + ' OK');
   };

@@ -1,11 +1,10 @@
-# TESTES - V6.6.4
+# Testes V6.6.5
 
-- [ ] Abrir Spotify, Chrome e Discord.
-- [ ] Confirmar sessões em Aplicativos.
-- [ ] Alterar A1-A5 somente em Aplicativos.
-- [ ] Verificar Studio sem botões A1-A5.
-- [ ] Verificar Dispositivos com mapeamento A1-A5 físico.
-- [ ] Clicar Atualizar Dispositivos.
-- [ ] Testar volume, mute e solo.
-- [ ] Fechar e abrir para validar persistência.
-- [ ] Testar PT-BR, EN-US e ES-ES.
+- Testar sessões atuais de apps.
+- Testar persistência permanente de configurações por app.
+- Testar lista vazia após reiniciar Miller/PC.
+- Testar bloqueio de áudio quando nenhuma rota A1-A5 estiver marcada.
+- Testar dispositivo configurado indisponível piscando em vermelho.
+- Testar botão Reconectar.
+- Testar visão por canal A1-A5.
+- Testar tradução PT-BR, EN-US e ES-ES.

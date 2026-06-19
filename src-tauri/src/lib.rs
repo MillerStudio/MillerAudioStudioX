@@ -1172,13 +1172,21 @@ struct RoutingPayload {
 
 #[tauri::command]
 fn set_audio_session_route(pid: u32, route: String, routing: RoutingPayload) -> Result<(), String> {
+    let has_route = routing.a1.unwrap_or(false)
+        || routing.a2.unwrap_or(false)
+        || routing.a3.unwrap_or(false)
+        || routing.a4.unwrap_or(false)
+        || routing.a5.unwrap_or(false);
     append_log(
         "routing_core.log",
         &format!(
-            "V6.6 route request pid={} route={} A1={:?} A2={:?} A3={:?} A4={:?} A5={:?}",
-            pid, route, routing.a1, routing.a2, routing.a3, routing.a4, routing.a5
+            "V6.6.5 route request pid={} route={} has_route={} A1={:?} A2={:?} A3={:?} A4={:?} A5={:?}",
+            pid, route, has_route, routing.a1, routing.a2, routing.a3, routing.a4, routing.a5
         ),
     );
+    if !has_route {
+        return set_wasapi_session_mute_by_pid(pid, true);
+    }
     Ok(())
 }
 

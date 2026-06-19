@@ -5,5 +5,10 @@
   "devices": "Devices",
   "settings": "Settings",
   "support": "Support",
-  "license": "License"
+  "license": "License",
+  "channelView": "Channel view",
+  "deviceUnavailable": "Device unavailable",
+  "reconnect": "Reconnect",
+  "reconnecting": "Reconnecting...",
+  "unavailable": "Unavailable"
 }

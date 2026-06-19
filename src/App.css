@@ -69,3 +69,19 @@ button.danger,button.danger.active{border-color:var(--danger,#ff4b7b);color:#fff
 .bus-select small{display:block;opacity:.75;margin-top:4px;line-height:1.25}
 .latency-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
 @media (max-width:900px){.latency-grid{grid-template-columns:1fr}.route-buttons{gap:4px}}
+
+/* V6.6.5 Device Health & Channel View */
+.device-alert{margin:0 0 22px 0}
+.blink{animation:millerBlink 1s infinite}
+.blink-box{animation:millerBlinkBorder 1s infinite}
+@keyframes millerBlink{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes millerBlinkBorder{0%,100%{border-color:var(--danger,#ff4b7b);box-shadow:0 0 18px color-mix(in srgb,var(--danger,#ff4b7b) 35%,transparent)}50%{border-color:var(--border,#123a61);box-shadow:none}}
+.bus-select.unavailable{border-color:var(--danger,#ff4b7b);background:color-mix(in srgb,var(--danger,#ff4b7b) 10%,transparent)}
+.channel-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:12px}
+.channel-card{border:1px solid var(--border,#123a61);border-radius:14px;padding:14px;background:color-mix(in srgb,var(--accent,#21e4ff) 4%,transparent);min-height:118px}
+.channel-card>b{display:block;font-size:22px;margin-bottom:10px;color:var(--accent,#21e4ff)}
+.channel-app{display:block;border:1px solid var(--soft,#173a60);border-radius:999px;padding:7px 10px;margin:7px 0;background:rgba(255,255,255,.04);font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.channel-app.off-app,.inactive-app td:first-child b{color:var(--danger,#ff4b7b)!important}
+.inactive-app{opacity:.82}
+@media(max-width:1200px){.channel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.channel-grid{grid-template-columns:1fr}}
