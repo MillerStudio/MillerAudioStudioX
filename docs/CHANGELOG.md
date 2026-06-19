@@ -11,3 +11,12 @@
 - Botão Reconectar com re-scan completo e delay para USB.
 - Visão por canal A1-A5 na aba Dispositivos.
 - Remoção dos TXT antigos de atualização.
+
+
+# V6.7.0 Matrix Mixer Foundation
+
+- Matrix Mixer no Painel.
+- Inputs e Aplicativos lado a lado.
+- A1-A5 físicos e B1-B3 virtuais.
+- Modo PRO DEV para testes.
+- TXT antigo removido.

@@ -8,3 +8,12 @@
 - Testar botão Reconectar.
 - Testar visão por canal A1-A5.
 - Testar tradução PT-BR, EN-US e ES-ES.
+
+
+# V6.7.0 Matrix Mixer Foundation
+
+- Matrix Mixer no Painel.
+- Inputs e Aplicativos lado a lado.
+- A1-A5 físicos e B1-B3 virtuais.
+- Modo PRO DEV para testes.
+- TXT antigo removido.

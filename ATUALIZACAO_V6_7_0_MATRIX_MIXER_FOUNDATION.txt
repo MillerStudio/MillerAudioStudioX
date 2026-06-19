@@ -1,0 +1,50 @@
+Miller Audio Studio X - V6.7.0 Matrix Mixer Foundation
+
+Objetivo:
+Transformar o Painel em um mixer matricial simplificado, estilo VoiceMeeter, mas mais fácil para usuário comum entender.
+
+Atualizado:
+- Painel agora mostra Inputs e Aplicativos lado a lado.
+- Inputs representam microfones físicos e entradas virtuais, como Voicemod/NVIDIA Broadcast.
+- 3 inputs padrão criados.
+- Botão para adicionar mais inputs em modo PRO DEV.
+- Build liberado em modo PRO DEV para testes.
+- Cada fonte mostra A1-A5 e B1-B3.
+- A1-A5 = saídas físicas.
+- B1-B3 = saídas virtuais preparadas para o futuro Miller Virtual Driver.
+- Cada fonte possui volume, gain dB, mute, solo e VU Meter colorido.
+- VU Meter usa azul/verde/amarelo/vermelho para facilitar leitura.
+- Aplicativos continuam sendo sessões reais WASAPI detectadas pelo Windows.
+- Aplicativos só aparecem quando existe sessão de áudio real.
+- Visão por canal passa a considerar Inputs e Aplicativos.
+- Ao reativar uma rota, o app tenta restaurar volume anterior.
+- Arquivos ATUALIZACAO antigos removidos; somente o TXT da versão atual fica na raiz.
+
+Observação técnica:
+Antes do Miller Virtual Driver, B1-B3 são base visual/preparatória. Para aparecerem como microfones/saídas reais no Windows será necessário implementar o driver virtual.
+
+Como iniciar:
+npm install
+npm run tauri dev
+
+Como gerar build:
+npm run tauri build
+
+Comandos Git:
+git status
+git add .
+git commit -m "V6.7.0 Matrix Mixer Foundation"
+git push
+git tag v6.7.0
+git push origin v6.7.0
+
+Checklist de testes:
+[ ] Abrir Miller e confirmar Painel com Inputs e Aplicativos.
+[ ] Selecionar microfone/Voicemod em Input 1.
+[ ] Marcar A1-A5/B1-B3 em um Input.
+[ ] Tocar Spotify/Chrome e confirmar app aparecendo em Aplicativos.
+[ ] Marcar A1/B1 em aplicativo e confirmar visual por canal.
+[ ] Testar volume, gain dB, mute e solo.
+[ ] Confirmar VU Meter colorido.
+[ ] Confirmar modo PRO DEV ativo.
+[ ] Confirmar PT-BR, EN-US e ES-ES.

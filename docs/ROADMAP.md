@@ -16,3 +16,12 @@ V6.7 Virtual Driver
 - Miller Virtual Microphone.
 - Miller Virtual Speakers.
 - Roteamento físico real multi-dispositivo.
+
+
+# V6.7.0 Matrix Mixer Foundation
+
+- Matrix Mixer no Painel.
+- Inputs e Aplicativos lado a lado.
+- A1-A5 físicos e B1-B3 virtuais.
+- Modo PRO DEV para testes.
+- TXT antigo removido.

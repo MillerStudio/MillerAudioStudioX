@@ -29,3 +29,8 @@ git push
 git tag v6.6.5
 git push origin v6.6.5
 ```
+
+
+## V6.7.0 Matrix Mixer Foundation
+
+Painel com Matrix Mixer simplificado, Inputs físicos/virtuais, Applications WASAPI, A1-A5 físicos e B1-B3 virtuais preparados para driver.
