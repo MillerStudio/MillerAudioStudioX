@@ -1,22 +1,11 @@
 # Changelog
 
-## V6.6.5 Device Health & Channel View
+## V6.7.1 Audio Source Redesign
 
-- Apps detectados agora são apenas da sessão atual.
-- Configurações por aplicativo permanecem salvas para sempre.
-- Lista de apps em ordem alfabética fixa.
-- Apps sem áudio ficam em vermelho/desabilitados.
-- Rota sem A1-A5 marcado bloqueia o áudio da sessão.
-- Dispositivos configurados indisponíveis ficam salvos e piscando em vermelho.
-- Botão Reconectar com re-scan completo e delay para USB.
-- Visão por canal A1-A5 na aba Dispositivos.
-- Remoção dos TXT antigos de atualização.
-
-
-# V6.7.0 Matrix Mixer Foundation
-
-- Matrix Mixer no Painel.
-- Inputs e Aplicativos lado a lado.
-- A1-A5 físicos e B1-B3 virtuais.
-- Modo PRO DEV para testes.
-- TXT antigo removido.
+- Interface simplificada para Painel, Dispositivos, Aplicativos e Configurações.
+- Painel com Hardware IN B1-B5 e Hardware OUT A1-A5.
+- Dispositivos com Entradas 1-5 e Saídas A1-A5 lado a lado.
+- Aplicativos por linha com Gain dB, VU Meter temático e FX expansível.
+- Compressor profissional visual por aplicativo.
+- Limiter Liga / Desliga por aplicativo.
+- Remoção visual de abas repetitivas do menu principal.
