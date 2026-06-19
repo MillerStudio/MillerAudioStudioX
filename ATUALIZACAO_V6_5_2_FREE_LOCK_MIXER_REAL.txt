@@ -1,0 +1,54 @@
+Miller Audio Studio X - V6.5.2 Free Lock + Mixer Real
+
+Atualização conjunta solicitada:
+V6.5.1 + V6.5.2 em uma única versão.
+
+Implementado no frontend:
+
+1. Free Lock correto
+- O botão Continuar Free não reinicia mais o timer antes de chegar a 00:00.
+- O tempo Free agora é persistido localmente por ID da máquina.
+- Se o aplicativo for fechado e o tempo acabar, ao abrir novamente ele continua expirado.
+- Quando o tempo chega em 00:00, aparece um bloqueio/modal central forçando o usuário a continuar Free.
+- O modal informa que as saídas ficam bloqueadas no fluxo do Miller até continuar a sessão.
+
+2. Janela maximizada
+- Configuração Tauri alterada para iniciar maximizado.
+- Tamanho base alterado para 1600x900.
+- Tamanho mínimo 1280x720.
+- Também foi adicionada tentativa de maximizar via frontend ao abrir.
+
+3. Apps recentes
+- Aplicativos que já tiveram sessão WASAPI real ficam salvos por até 7 dias.
+- A aba Rotas passa a exibir também aplicativos recentes, mesmo que tenham parado de emitir som.
+- Apps recentes aparecem marcados como "Recente".
+
+4. Persistência por aplicativo
+- Volume salvo por processo/aplicativo.
+- Rota A1-A5 salva por processo/aplicativo.
+- Mute salvo por processo/aplicativo.
+- Solo salvo por processo/aplicativo.
+- Ao trocar de aba, o valor visual não volta para 100%.
+
+5. Aplicativos
+- Slider agora usa valor persistido/sincronizado.
+- Ao mover o slider, continua chamando set_audio_session_volume quando há PID real.
+- Se o app sumir e voltar, o volume anterior é reaplicado visualmente.
+
+6. Studio / Mixer
+- Mixer deixou de ser somente visual.
+- Volume do mixer chama set_audio_session_volume em sessões reais.
+- Mute funciona colocando volume real em 0 e restaurando o volume anterior ao desmutar.
+- Solo funciona mutando os outros apps detectados/recentes.
+- Rota escolhida no Studio é persistida por app.
+- Mixer agora usa a mesma base persistida das abas Aplicativos e Rotas.
+
+Limite atual importante:
+- Roteamento real A1-A5 ainda depende da V6.6 Routing Engine.
+- Latência real ainda depende de medição no core.
+- Configurações Smart Mic ainda são base/preset visual e precisam do motor de áudio interno para aplicar DSP real.
+
+Arquivos principais alterados:
+- src/App.tsx
+- src/App.css
+- src-tauri/tauri.conf.json

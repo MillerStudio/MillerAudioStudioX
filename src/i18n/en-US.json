@@ -1,0 +1,8 @@
+{
+  "solo": "Solo",
+  "mute": "Mute",
+  "unmute": "Unmute",
+  "volume": "Volume",
+  "studio": "Studio",
+  "freeSessionExpired": "Free time expired. Computer audio is blocked until you continue."
+}

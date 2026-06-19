@@ -1,0 +1,8 @@
+{
+  "solo": "Solo",
+  "mute": "Silenciar",
+  "unmute": "Activar sonido",
+  "volume": "Volumen",
+  "studio": "Studio",
+  "freeSessionExpired": "Tiempo Free expirado. El audio del equipo está bloqueado hasta continuar."
+}
