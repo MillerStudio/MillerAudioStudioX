@@ -1,0 +1,77 @@
+Miller Audio Studio X - V6.7.2 UI Restore & Real Controls Fix
+
+Resumo
+- Correção de interface após revisão visual das abas Painel, Dispositivos, Aplicativos e Configurações.
+- Foco em simplificação, restauração de áreas removidas e preparação para controles reais.
+
+Atualizações principais
+
+Painel
+- Removida a linha técnica B1 B2 B3 B4 B5 / A1 A2 A3 A4 A5 no topo dos blocos.
+- Hardware IN agora mostra fontes enviadas para saídas virtuais, incluindo inputs e aplicativos roteados para B1-B5.
+- Hardware OUT agora mostra dispositivo físico configurado e aplicativos conectados em cada saída A1-A5.
+- Adicionado bloco de alertas.
+- Mantidos cards de Entradas, Aplicativos, Saídas, CPU e Latência.
+
+Dispositivos
+- Cards mais compactos.
+- Nomes longos limitados visualmente para não quebrar layout.
+- Tooltip com nome completo ao passar o mouse.
+- Entradas 1-3 mantidas como base Free.
+- Entradas 4-5 permanecem como PRO.
+- Saídas A1-A5 lado a lado.
+- Mesma saída física não pode ficar duplicada em mais de um canal: ao escolher em outro canal, ela é removida do anterior.
+- Botão Reconectar mantido.
+
+Aplicativos
+- Removido botão Avançado.
+- Mantido apenas botão FX.
+- FX expande abaixo da linha do aplicativo.
+- Processo e PID seguem ocultos.
+- Mantidos Volume, Gain dB, VU Meter, Mute, Solo e rotas A1-A5/B1-B5 por linha.
+
+Configurações
+- Restauradas áreas de Licença e Suporte dentro da aba Configurações.
+- Mantidos Idioma, Aparência, Inicialização, Atualizações, Áudio e Avançado.
+- Suporte exibe logs, diagnóstico e informações técnicas.
+- Licença exibe plano, PC ID, tempo restante e ativação.
+
+Temas
+- Refatoração visual dos temas.
+- Melhor contraste no Miller Red.
+- Padrão mais consistente para Blue, Red, Purple, Green, Gold, Orange, Ice, Carbon, Cyberpunk, Midnight, Matrix e Studio Pro.
+- VU Meter segue gradiente do tema e reserva vermelho para pico/clipping.
+
+Observações
+- Build frontend validado com npm run build.
+- Rust/Tauri nativo não foi validado com cargo check neste ambiente.
+- Esta versão evita adicionar novas funções grandes e foca em corrigir UX, layout e consistência.
+
+Checklist de testes
+[ ] Abrir Painel e confirmar que não aparece mais a linha B1 B2 B3 / A1 A2 A3.
+[ ] Confirmar que Hardware IN mostra fontes roteadas para B1-B5.
+[ ] Confirmar que Hardware OUT mostra apps roteados para A1-A5.
+[ ] Confirmar que Hardware OUT mostra o nome do dispositivo físico em cada A.
+[ ] Confirmar que Dispositivos não quebra layout com nomes longos.
+[ ] Confirmar que não é possível manter o mesmo dispositivo físico em duas saídas ao mesmo tempo.
+[ ] Confirmar que Aplicativos mostra apenas botão FX.
+[ ] Confirmar que FX expande abaixo da linha.
+[ ] Confirmar que Configurações tem Licença e Suporte novamente.
+[ ] Testar temas, principalmente Miller Red.
+[ ] Testar PT-BR, EN-US e ES-ES.
+
+Como iniciar
+npm install
+npm run tauri dev
+
+Como gerar build
+npm run build
+npm run tauri build
+
+Comandos Git recomendados
+git add .
+git commit -m "V6.7.2 UI Restore and Real Controls Fix"
+git push
+
+git tag v6.7.2
+git push origin v6.7.2

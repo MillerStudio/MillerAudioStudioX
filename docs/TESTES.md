@@ -1,8 +1,7 @@
-# Testes V6.7.1
+# Testes V6.7.2
 
-- Validar menu simplificado.
-- Validar Painel com B1-B5 e A1-A5.
-- Validar Dispositivos com Entradas e Saídas lado a lado.
-- Validar Aplicativos por linha.
-- Validar FX expandido e painel lateral.
-- Validar traduções.
+- Validar Painel, Dispositivos, Aplicativos e Configurações.
+- Validar temas Blue e Red.
+- Validar tradução PT-BR, EN-US e ES-ES.
+- Validar que o mesmo dispositivo físico não fica em duas saídas.
+- Validar que FX expande abaixo do aplicativo.

@@ -1,10 +1,10 @@
-# Roadmap
+# ROADMAP
 
 ## Atual
-- V6.7.1 Audio Source Redesign
+V6.7.2 UI Restore & Real Controls Fix
 
-## Próximas fases
-- V6.7.2 Real Gain & DSP Prep
-- V6.8 Virtual Driver Foundation
-- V6.9 Real Matrix Routing Engine
-- V7.0 AI Audio Studio
+## Próximo
+- Tornar controles de entrada/saída 100% reais no Core.
+- CPU real e latência real via núcleo Rust.
+- DSP real para Gain, EQ, Compressor e Limiter.
+- Virtual Driver: Miller Virtual Microphone / Miller Virtual Speakers.

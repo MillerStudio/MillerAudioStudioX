@@ -1,11 +1,13 @@
-# Changelog
+# CHANGELOG
 
-## V6.7.1 Audio Source Redesign
+## V6.7.2 UI Restore & Real Controls Fix
 
-- Interface simplificada para Painel, Dispositivos, Aplicativos e Configurações.
-- Painel com Hardware IN B1-B5 e Hardware OUT A1-A5.
-- Dispositivos com Entradas 1-5 e Saídas A1-A5 lado a lado.
-- Aplicativos por linha com Gain dB, VU Meter temático e FX expansível.
-- Compressor profissional visual por aplicativo.
-- Limiter Liga / Desliga por aplicativo.
-- Remoção visual de abas repetitivas do menu principal.
+- Painel limpo sem rótulos técnicos duplicados B/A.
+- Hardware IN/OUT agora mostra nomes reais e apps roteados.
+- Cards de Dispositivos mais compactos.
+- Nome longo com truncamento visual e tooltip.
+- Saídas A1-A5 não permitem duplicar o mesmo dispositivo físico.
+- Aplicativos mantém somente FX; removido Avançado.
+- Configurações recupera Licença e Suporte.
+- Temas reorganizados com melhor contraste.
+- Build frontend validado.
