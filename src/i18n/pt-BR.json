@@ -1,8 +1,9 @@
 {
-  "solo": "Solo",
-  "mute": "Mutar",
-  "unmute": "Desmutar",
-  "volume": "Volume",
+  "dashboard": "Painel",
+  "applications": "Aplicativos",
   "studio": "Studio",
-  "freeSessionExpired": "Tempo Free expirado. Áudio do computador bloqueado até continuar."
+  "devices": "Dispositivos",
+  "settings": "Configurações",
+  "support": "Suporte",
+  "license": "Licença"
 }

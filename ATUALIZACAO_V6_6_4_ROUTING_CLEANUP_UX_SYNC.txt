@@ -1,0 +1,63 @@
+Miller Audio Studio X - V6.6.4 Routing Cleanup & UX Sync
+
+OBJETIVO
+Simplificar o fluxo de roteamento e deixar o Miller mais profissional e fácil de entender.
+
+O QUE FOI ATUALIZADO
+1. Rotas simplificadas
+- Removida a duplicidade de controles A1-A5 no Studio.
+- Aplicativos agora é o único local para alterar rotas por aplicativo.
+- Dispositivos agora mostra o mapeamento físico A1-A5.
+- A aba Rotas foi removida da navegação principal para evitar confusão.
+
+2. Studio limpo
+- Studio agora é apenas mixer.
+- Mantido: Volume, VU Meter, Latência, Mute e Solo.
+- Removido: botões A1-A5 do Studio.
+
+3. Dispositivos melhorado
+- Adicionado mapeamento A1-A5 na aba Dispositivos.
+- Botão Atualizar Dispositivos faz nova leitura completa via Core.
+- A tela separa melhor microfones, saídas e barramentos.
+
+4. Latência em tempo real
+- Latency Monitor passa a atualizar continuamente com base no buffer/sample rate ativo.
+- Dashboard, Studio e Configurações refletem a medição atualizada.
+
+5. Volume mais responsivo
+- Slider aplica estado visual imediatamente.
+- Reduzido bloqueio causado por múltiplas chamadas WASAPI durante alteração de volume.
+
+6. Interface e idiomas
+- Fluxo base em português.
+- Mantida tradução PT-BR / EN-US / ES-ES.
+- Nomes das abas continuam traduzíveis.
+
+COMO INICIAR
+npm install
+npm run tauri dev
+
+COMO GERAR BUILD
+npm run tauri build
+
+COMANDOS GIT
+
+git status
+git add .
+git commit -m "V6.6.4 Routing Cleanup UX Sync"
+git push
+git tag v6.6.4
+git push origin v6.6.4
+
+CHECKLIST DE TESTES
+[ ] Abrir Spotify/Chrome/Discord e confirmar sessões no Miller.
+[ ] Em Aplicativos, marcar A1-A5 por app.
+[ ] Confirmar que o Studio não mostra botões A1-A5.
+[ ] Confirmar que o Studio exibe apenas mixer: volume, VU, latência, mute e solo.
+[ ] Confirmar que Dispositivos mostra mapeamento A1-A5 físico.
+[ ] Clicar em Atualizar Dispositivos e verificar se reprodução/gravação foram relidos.
+[ ] Confirmar que volume tem resposta mais rápida.
+[ ] Confirmar que Mute/Solo continuam funcionando.
+[ ] Confirmar persistência após fechar e abrir.
+[ ] Confirmar Latency Monitor atualizando.
+[ ] Testar PT-BR, EN-US e ES-ES.

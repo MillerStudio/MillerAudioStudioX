@@ -1,9 +1,12 @@
-# Changelog
+# CHANGELOG
 
-## V6.6 Complete Routing Update
+## V6.6.4 Routing Cleanup & UX Sync
 
-- Routing Core A1-A5 por aplicativo.
-- Device Manager preparado para associação de barramentos.
-- Latency Monitor com input/output/round trip.
-- Persistência v660 para volume, mute, solo e routing.
-- Log de roteamento no Rust.
+- Simplificação do sistema de rotas.
+- Aplicativos virou o único local para controlar A1-A5 por app.
+- Studio virou apenas mixer: volume, VU Meter, latência, mute e solo.
+- Dispositivos passou a controlar o mapeamento físico A1-A5.
+- Removida duplicidade visual de rotas entre abas.
+- Latência passa a atualizar continuamente.
+- Slider de volume mais responsivo.
+- Interface mantida com base PT-BR e tradução EN-US / ES-ES.

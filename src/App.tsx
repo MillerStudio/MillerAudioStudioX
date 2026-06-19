@@ -222,10 +222,6 @@ function warningText(raw: unknown, t: any) {
   return v;
 }
 
-function routeDisplayName(name: string | undefined, t: any) {
-  if (!name || name === 'Rota Principal' || name === 'Main Route' || name === 'Ruta Principal') return t.mainRoute;
-  return name;
-}
 function defaultRouteOutputs(outputs: AudioDevice[]) {
   return [0,1,2,3,4].map(i => outputs[i]?.id || '');
 }
@@ -358,6 +354,20 @@ export default function App() {
 
   useEffect(() => {
     const id = setInterval(() => {
+      setState(prev => {
+        const sampleRate = n(settings.sampleRate, 48000);
+        const buffer = n(settings.buffer, 128);
+        const outputLatencyMs = Math.max(1, Math.round((buffer / sampleRate) * 1000));
+        const inputLatencyMs = Math.max(1, Math.round(outputLatencyMs * 0.75));
+        const roundTripLatencyMs = inputLatencyMs + outputLatencyMs;
+        return { ...prev, performance: { ...(prev.performance || DEFAULT_STATE.performance!), sampleRate, buffer, inputLatencyMs, outputLatencyMs, latencyMs: roundTripLatencyMs, roundTripLatencyMs } };
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [settings.sampleRate, settings.buffer]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
       setLicenseState(prev => {
         if (!prev || prev.activated || prev.licenseType !== 'FREE') return prev;
         const localLeft = freeLeftFromLocal(prev.machineId);
@@ -463,17 +473,18 @@ export default function App() {
     }
 
     setMixerPersist(next);
-    if (patch.volume !== undefined) await applyVolumeToSession(row, next[key].volume);
-    if (patch.route !== undefined || patch.routing !== undefined) await applyRouteToSession(row, next[key].routing);
-    await applyPersistedMuteState(allRows, next);
+    const onlyVolume = patch.volume !== undefined && patch.routing === undefined && patch.route === undefined && patch.muted === undefined && patch.solo === undefined;
+    if (patch.volume !== undefined) applyVolumeToSession(row, next[key].volume).catch(()=>{});
+    if (patch.route !== undefined || patch.routing !== undefined) applyRouteToSession(row, next[key].routing).catch(()=>{});
+    if (!onlyVolume) await applyPersistedMuteState(allRows, next);
   }
-  const nav: [Tab,string][] = [['dashboard',t.nav.dashboard],['devices',t.nav.devices],['apps',t.nav.apps],['smartMic',t.nav.smartMic],['routes',t.nav.routes],['settings',t.nav.settings],['support',t.nav.support],['license',t.nav.license],['studio',t.nav.studio || t.studioTitle || 'Studio']];
+  const nav: [Tab,string][] = [['dashboard',t.nav.dashboard],['devices',t.nav.devices],['apps',t.nav.apps],['studio',t.nav.studio || t.studioTitle || 'Studio'],['smartMic',t.nav.smartMic],['settings',t.nav.settings],['support',t.nav.support],['license',t.nav.license]];
 
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="dot"/><div><h1>Miller</h1><p>Audio Studio X</p></div></div>
       {nav.map(([id,label]) => <button key={id} className={tab===id?'nav active':'nav'} onClick={() => setTab(id)}>{label}</button>)}
-      <small className="version">V6.6 Complete Routing Update</small>
+      <small className="version">V6.6.4 Routing Cleanup & UX Sync</small>
     </aside>
     <main className="main">
       <div className="top-actions"><label className="auto-pill"><input type="checkbox" checked={settings.autoRefresh} onChange={e=>updateSettings({autoRefresh:e.target.checked})}/>{t.auto}</label><button onClick={()=>refresh(true)}>{loading?t.running:t.refresh}</button><button>{t.core}</button></div>
@@ -481,7 +492,7 @@ export default function App() {
       {wizard && <SetupWizard t={t} inputs={inputs} outputs={outputs} onDone={(inputId: string, outputId: string, profile: string)=>{ if(inputId){preferredInputRef.current=inputId; localStorage.setItem('miller_input',inputId)} if(outputId){preferredOutputRef.current=outputId; localStorage.setItem('miller_output',outputId)} const idx=profiles.findIndex(p=>p.name.toLowerCase().includes(profile.toLowerCase().split(' ')[0])); if(idx>=0) setSelectedProfile(idx); localStorage.setItem('miller_wizard_done_v44','true'); setWizard(false); refresh(true); }} onSkip={()=>{localStorage.setItem('miller_wizard_done_v44','true'); setWizard(false);}} />}
       <MicMonitor enabled={!!settings.monitorMicrophone} />
       {tab==='dashboard' && <Dashboard t={t} inputs={inputs} outputs={outputs} apps={groupedApps} prefIn={prefIn} prefOut={prefOut} perf={perf} profile={currentProfile} routes={routes} timestamp={state.timestamp || 'N/A'} licenseState={licenseState} />}
-      {tab==='devices' && <Devices t={t} inputs={inputs} outputs={outputs} prefIn={prefIn} prefOut={prefOut} onInput={(id: string)=>{preferredInputRef.current=id; localStorage.setItem('miller_input', id); refresh(true)}} onOutput={(id: string)=>{preferredOutputRef.current=id; localStorage.setItem('miller_output', id); refresh(true)}} timestamp={state.timestamp || 'N/A'} />}
+      {tab==='devices' && <Devices t={t} inputs={inputs} outputs={outputs} routes={routes} setRoutes={setRoutes} selected={selectedRoute} prefIn={prefIn} prefOut={prefOut} onInput={(id: string)=>{preferredInputRef.current=id; localStorage.setItem('miller_input', id); refresh(true)}} onOutput={(id: string)=>{preferredOutputRef.current=id; localStorage.setItem('miller_output', id); refresh(true)}} timestamp={state.timestamp || 'N/A'} onRefresh={()=>refresh(true)} loading={loading} />}
       {tab==='apps' && <Applications t={t} sessions={visibleSessions} updateMixerRow={updateMixerRow}/>} 
       {tab==='smartMic' && <SmartMicPanel licenseState={licenseState} t={t} profiles={profiles} setProfiles={setProfiles} selected={selectedProfile} setSelected={setSelectedProfile} profile={currentProfile} patchProfile={patchProfile} patchSmartMic={patchSmartMic} settings={settings} updateSettings={updateSettings}/>} 
       {tab==='routes' && <Routes licenseState={licenseState} t={t} apps={routeSessions} outputs={outputs} routes={routes} setRoutes={setRoutes} selected={selectedRoute} setSelected={setSelectedRoute}/>} 
@@ -495,7 +506,29 @@ export default function App() {
 }
 
 function Dashboard({t, inputs, outputs, apps, prefIn, prefOut, perf, profile, routes, timestamp, licenseState}: any) { return <section><h2>{t.dashboardTitle}</h2><p className="sub">{t.dashboardSub}</p><div className="stats">{card(t.microphone, prefIn?t.ok:t.off, prefIn?.name || t.notFound, prefIn?'ok':'warn')}{card(t.output, prefOut?t.ok:t.off, prefOut?.name || t.notFound, prefOut?'ok':'warn')}{card(t.smartMicStatus, profile ? profileName(profile,t) : '—', t.profileCurrent)}{card(t.latency, latencyText(perf,t), t.roundTrip || 'Round Trip', latencyStatus(n(perf?.roundTripLatencyMs ?? perf?.latencyMs)))}</div><div className="grid3"><div className="panel"><h3>{t.systemStatus}</h3>{row(t.inputs, inputs.length, inputs.length?'ok':'warn')}{row(t.outputs, outputs.length, outputs.length?'ok':'warn')}{row(t.apps, apps.length)}{row(t.routesStatus, routes.length)}{row(t.lastRead, timestamp)}</div><div className="panel"><h3>{t.smartTitle}</h3>{row(t.profileCurrent, profile ? profileName(profile,t) : '—','ok')}{row(t.noise, `${profile?.smartMic?.noise || 0}%`)}{row(t.keyboard, `${profile?.smartMic?.keyboard || 0}%`)}{row(t.natural, `${profile?.smartMic?.natural || 0}%`)}</div><div className="panel"><h3>{t.license}</h3>{row(t.status, licenseState?.licenseType || t.freeStatus, licenseState?.activated?'ok':'warn')}{row(t.remaining, licenseState?.activated ? '∞' : formatTimeMMSS(licenseState?.freeSecondsLeft || 3600))}<p className="hint">{translateMessage(licenseState?.message, t) || t.freeNote}</p></div></div></section>; }
-function Devices({t, inputs, outputs, prefIn, prefOut, onInput, onOutput, timestamp}: any) { return <section><h2>{t.devicesTitle}</h2><p className="sub">{t.devicesSub}</p><div className="grid2"><div className="panel"><h3>{t.current}</h3><label>{t.microphone}<select value={prefIn?.id || ''} onChange={e=>onInput(e.target.value)}><option value="">{t.notFound}</option>{inputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label><label>{t.output}<select value={prefOut?.id || ''} onChange={e=>onOutput(e.target.value)}><option value="">{t.notFound}</option>{outputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{row(t.lastRead, timestamp)}</div><DeviceList title={t.inputs} devices={inputs} empty={t.notFound} t={t}/></div><div className="grid2"><DeviceList title={t.outputs} devices={outputs} empty={t.notFound} t={t}/><div className="panel"><h3>{t.future}</h3><p className="hint">{t.deviceManagerHelp || 'Gerenciador A1-A5 ativo: associe os barramentos Miller às saídas físicas detectadas.'}</p></div></div></section>; }
+function Devices({t, inputs, outputs, routes, setRoutes, selected, prefIn, prefOut, onInput, onOutput, timestamp, onRefresh, loading}: any) {
+  const route = routes?.[selected] || routes?.[0] || DEFAULT_ROUTES[0];
+  const routeOutputs = route.outputs && route.outputs.length === 5 ? route.outputs : defaultRouteOutputs(outputs);
+  const outputOptions = [
+    ...outputs.map((d: AudioDevice) => [d.id || '', d.name || t.noAudioDevice]),
+    ['', t.noAudioDevice]
+  ];
+  const setBus = (idx: number, value: string) => {
+    const nextRoutes = [...(routes || DEFAULT_ROUTES)];
+    const current = nextRoutes[selected] || nextRoutes[0] || DEFAULT_ROUTES[0];
+    const nextOutputs = [...routeOutputs];
+    nextOutputs[idx] = value;
+    nextRoutes[selected || 0] = { ...current, outputs: nextOutputs };
+    setRoutes(nextRoutes);
+  };
+  return <section><h2>{t.devicesTitle}</h2><p className="sub">{t.devicesSub}</p>
+    <div className="grid2">
+      <div className="panel"><h3>{t.current}</h3><label>{t.microphone}<select value={prefIn?.id || ''} onChange={e=>onInput(e.target.value)}><option value="">{t.notFound}</option>{inputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label><label>{t.output}<select value={prefOut?.id || ''} onChange={e=>onOutput(e.target.value)}><option value="">{t.notFound}</option>{outputs.map((d:AudioDevice)=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{row(t.lastRead, timestamp)}<button onClick={onRefresh} disabled={loading}>{loading ? t.running : t.refresh}</button><p className="hint">{t.fullDeviceScanHelp || 'Atualizar dispositivos faz uma verificação completa de reprodução, gravação e dispositivo padrão do Windows.'}</p></div>
+      <div className="panel"><h3>{t.routeOutputs || 'Saídas A1-A5'}</h3><p className="hint">{t.outputBusHelp || 'Aqui você associa cada barramento Miller a uma saída física. As rotas por aplicativo ficam apenas em Aplicativos.'}</p><div className="bus-list">{[0,1,2,3,4].map(i=><label className="bus-select" key={i}>A{i+1}<select value={routeOutputs[i] || ''} onChange={e=>setBus(i,e.target.value)}>{outputOptions.map(([id, label]: any, n: number)=><option key={`${id}-${n}`} value={id}>{label}</option>)}</select><small>{routeOutputLabel(routeOutputs[i], i, outputs, t)}</small></label>)}</div></div>
+    </div>
+    <div className="grid2"><DeviceList title={t.inputs} devices={inputs} empty={t.notFound} t={t}/><DeviceList title={t.outputs} devices={outputs} empty={t.notFound} t={t}/></div>
+  </section>;
+}
 function DeviceList({title, devices, empty, t}: {title:string; devices:AudioDevice[]; empty:string; t:any}) { const dirLabel=(d?:string)=>d==='input'?t.input:d==='output'?t.output:d; return <div className="panel"><h3>{title}</h3>{devices.length ? devices.map((d,i)=><div className="device" key={`${d.id}-${i}`}><b>{d.name}</b><span className="ok">{d.status || t.ok}</span><small>{dirLabel(d.direction)} · {shortId(d.id)}</small></div>) : <p className="empty">{empty}</p>}</div>; }
 function Applications({t, sessions, updateMixerRow}: any) {
   const rows = Array.isArray(sessions) ? sessions.slice(0, 24) : [];
@@ -532,40 +565,19 @@ function SmartMicPanel({t, profiles, setProfiles, selected, setSelected, patchPr
   return <section><h2>{t.smartTitle}</h2><p className="sub">{t.smartSub}</p><div className="grid2 wide-left"><div className="panel"><h3>{t.myProfiles}</h3><label>{t.profileCurrent}<select value={safeSelected} onChange={e=>setSelected(Number(e.target.value))}>{profiles.map((p:Profile,i:number)=><option value={i} key={p.id}>{i===safeSelected?'✓ ':''}{profileName(p,t)}</option>)}</select></label>{profiles.length===0&&<p className="hint">{t.noUserProfiles}</p>}<label>{t.name}<input value={activeProfile ? profileName(activeProfile,t) : ''} onChange={e=>patchProfile({name:e.target.value})}/></label><label>{t.description}<textarea value={activeProfile ? profileDesc(activeProfile,t) : ''} onChange={e=>patchProfile({desc:e.target.value})}/></label><div className="btn-row"><button onClick={()=>patchProfile({smartMic:{...sm}})}>{t.save}</button><button disabled={!canAddProfile} onClick={add}>{t.new}</button><button disabled={!canAddProfile} onClick={()=>{ if(!canAddProfile){ alert(t.freeProfileLimit); return; } setProfiles([...profiles,{...activeProfile,id:makeId(),name:`${profileName(activeProfile,t)} ${t.cloneSuffix}`}]);}}>{t.clone}</button><button disabled={profiles.length<=1} onClick={()=>{setProfiles(profiles.filter((_:Profile,i:number)=>i!==safeSelected)); setSelected(0);}}>{t.delete}</button></div><h3>{t.quickProfiles}</h3><p className="hint">{t.myProfiles} · {t.customProfile}</p><div className="profile-chips">{profiles.map((p:Profile,i:number)=><button className={i===safeSelected?'chip active':'chip'} onClick={()=>setSelected(i)} key={p.id}>{i===safeSelected?'✓ ':''}{profileName(p,t)}</button>)}</div><h3>{t.officialLibrary}</h3><p className="hint">{t.officialLibraryHelp}</p><div className="library-grid">{OFFICIAL_PROFILES.map((p:Profile)=><div className="library-card" key={p.id}><b>{profileName(p,t)}</b><small>{t.readOnlyProfile}</small><p>{profileDesc(p,t)}</p><div className="btn-row"><button onClick={()=>previewOfficial(p)}>{t.previewApply}</button><button disabled={!canAddProfile} onClick={()=>duplicateOfficial(p)}>{t.duplicateToMyProfiles}</button></div></div>)}</div></div><div className="panel"><h3>{t.micSettings}</h3><Slider label={t.noise} help={t.noiseHelp} value={sm.noise} onChange={v=>patchSmartMic({noise:v})}/><Slider label={t.keyboard} help={t.keyboardHelp} value={sm.keyboard} onChange={v=>patchSmartMic({keyboard:v})}/><Slider label={t.gate} help={t.gateHelp} value={sm.gate} onChange={v=>patchSmartMic({gate:v})}/><Slider label={t.compressor} help={t.compressorHelp} value={sm.compressor} onChange={v=>patchSmartMic({compressor:v})}/><Slider label={t.limiter} help={t.limiterHelp} value={sm.limiter} onChange={v=>patchSmartMic({limiter:v})}/><Slider label={t.natural} help={t.naturalHelp} value={sm.natural} onChange={v=>patchSmartMic({natural:v})}/><Check label={t.monitorMic} checked={!!settings.monitorMicrophone} onChange={v=>updateSettings({monitorMicrophone:v})}/><p className="hint">{t.monitorMicHelp}</p><Check label={t.autoGain} checked={!!sm.autoGain} onChange={v=>patchSmartMic({autoGain:v})}/><Check label={t.laugh} checked={!!sm.protectLaugh} onChange={v=>patchSmartMic({protectLaugh:v})}/><Check label={t.scream} checked={!!sm.protectScream} onChange={v=>patchSmartMic({protectScream:v})}/></div></div></section>;
 }
 
-function Routes({t, apps, outputs, routes, setRoutes, selected, setSelected, licenseState}: any) {
-  const route = routes[selected] || routes[0] || DEFAULT_ROUTES[0];
-  const limits = planLimits(licenseState);
-  const canAddRoute = routes.length < limits.maxRoutes;
+function Routes({t, outputs, routes, setRoutes, selected}: any) {
+  const route = routes?.[selected] || routes?.[0] || DEFAULT_ROUTES[0];
   const routeOutputs = route.outputs && route.outputs.length === 5 ? route.outputs : defaultRouteOutputs(outputs);
-  const updateRoute = (patch: Partial<RoutePreset>) => {
-    const next = [...routes];
-    next[selected] = { ...route, ...patch };
-    setRoutes(next);
-  };
-  const toggle = (proc: string, idx: number) => {
-    const matrix = { ...(route.matrix || {}) };
-    const arr = [...(matrix[proc] || [true, false, false, false, false])];
-    arr[idx] = !arr[idx];
-    matrix[proc] = arr;
-    updateRoute({ matrix });
-  };
-  const rename = (name: string) => updateRoute({ name });
+  const outputOptions = [...outputs.map((d: AudioDevice) => [d.id || '', d.name || t.noAudioDevice]), ['', t.noAudioDevice]];
   const setBus = (idx: number, value: string) => {
+    const nextRoutes = [...(routes || DEFAULT_ROUTES)];
+    const current = nextRoutes[selected] || nextRoutes[0] || DEFAULT_ROUTES[0];
     const nextOutputs = [...routeOutputs];
     nextOutputs[idx] = value;
-    updateRoute({ outputs: nextOutputs });
+    nextRoutes[selected || 0] = { ...current, outputs: nextOutputs };
+    setRoutes(nextRoutes);
   };
-  const addRoute = () => {
-    setRoutes([...routes, { id: makeId(), name: `${t.new} ${t.route}`, matrix: {}, outputs: defaultRouteOutputs(outputs) }]);
-    setSelected(routes.length);
-  };
-  const cloneRoute = () => setRoutes([...routes, { ...route, id: makeId(), name: `${routeDisplayName(route.name, t)} ${t.cloneSuffix}`, outputs: [...routeOutputs] }]);
-  const deleteRoute = () => { setRoutes(routes.filter((_: RoutePreset, i: number) => i !== selected)); setSelected(0); };
-  const outputOptions = [
-    ...outputs.map((d: AudioDevice) => [d.id || '', d.name || t.noAudioDevice]),
-    ['', t.noAudioDevice]
-  ];
-  return <section><h2>{t.routesTitle}</h2><p className="sub">{t.routesSub}</p><div className="grid2 wide-left"><div className="panel"><h3>{t.routesTitle}</h3><label>{t.route}<select value={selected} onChange={e=>setSelected(Number(e.target.value))}>{routes.map((r:RoutePreset,i:number)=><option value={i} key={r.id}>{routeDisplayName(r.name, t)}</option>)}</select></label><label>{t.name}<input value={routeDisplayName(route?.name, t)} onChange={e=>rename(e.target.value)}/></label><p className="hint">{t.realRoutesOnly}</p><div className="btn-row"><button disabled={!canAddRoute} onClick={()=>{ if(!canAddRoute){ alert(t.freeRouteLimit); return; } addRoute(); }}>{t.new}</button><button disabled={!canAddRoute} onClick={()=>{ if(!canAddRoute){ alert(t.freeRouteLimit); return; } cloneRoute(); }}>{t.clone}</button><button disabled={routes.length<=1} title={t.routeDeleteHelp} onClick={deleteRoute}>{t.delete}</button></div><table><thead><tr><th>{t.apps}</th><th>{t.process}</th><th>A1</th><th>A2</th><th>A3</th><th>A4</th><th>A5</th></tr></thead><tbody>{(apps.length?apps:[{app:'—',process:'—'}]).slice(0,18).map((a:any,i:number)=>{ const proc=String(a.process||`app-${i}`); const arr=route?.matrix?.[proc]||[true,false,false,false,false]; return <tr key={i}><td><b>{a.app}</b></td><td>{proc}{a.recent && <small> · {t.recentApp || 'Recente'}</small>}</td>{[0,1,2,3,4].map(x=><td key={x}><button className={arr[x]?'circle on':'circle'} onClick={()=>toggle(proc,x)}>A{x+1}</button></td>)}</tr>;})}</tbody></table></div><div className="panel"><h3>{t.routeOutputs}</h3><p className="hint">{t.outputBusHelp}</p><div className="bus-list">{[0,1,2,3,4].map(i=><label className="bus-select" key={i}>A{i+1}<select value={routeOutputs[i] || ''} onChange={e=>setBus(i,e.target.value)}>{outputOptions.map(([id, label]: any, n: number)=><option key={`${id}-${n}`} value={id}>{label}</option>)}</select><small>{routeOutputLabel(routeOutputs[i], i, outputs, t)}</small></label>)}</div><h3>{t.outputMatrix}</h3>{[0,1,2,3,4].map(i=>row(`A${i+1}`, routeOutputLabel(routeOutputs[i], i, outputs, t), routeOutputs[i]?'ok':'warn'))}</div></div></section>;
+  return <section><h2>{t.devicesTitle}</h2><p className="sub">{t.outputBusHelp}</p><div className="panel"><h3>{t.routeOutputs}</h3><p className="hint">{t.routeCleanupHelp || 'V6.6.4 simplificou o fluxo: rotas por aplicativo ficam em Aplicativos; A1-A5 físico fica em Dispositivos.'}</p><div className="bus-list">{[0,1,2,3,4].map(i=><label className="bus-select" key={i}>A{i+1}<select value={routeOutputs[i] || ''} onChange={e=>setBus(i,e.target.value)}>{outputOptions.map(([id, label]: any, n: number)=><option key={`${id}-${n}`} value={id}>{label}</option>)}</select><small>{routeOutputLabel(routeOutputs[i], i, outputs, t)}</small></label>)}</div></div></section>;
 }
 
 function SettingsPanel({licenseState, t, settings, updateSettings, perf, logsPath, runAudit, openLogs, debugLoading, applyQuality, updateInfo, updateLoading, checkUpdatesNow}: any) { const limits = planLimits(licenseState); const allThemeOptions = [['miller-blue','Miller Blue'],['miller-red','Miller Red'],['miller-purple','Miller Purple'],['miller-green','Miller Green'],['miller-gold','Miller Gold'],['miller-orange','Miller Orange'],['miller-ice','Miller Ice'],['miller-carbon','Miller Carbon'],['miller-cyberpunk','Miller Cyberpunk'],['miller-midnight','Miller Midnight'],['miller-matrix','Miller Matrix'],['carbon-black','Carbon Black'],['cyber-neon','Cyber Neon'],['studio-pro','Studio Pro']]; const themeOptions = limits.themes ? allThemeOptions.filter((x:any)=>(limits.themes as string[]).includes(x[0])) : allThemeOptions; return <section><h2>{t.settingsTitle}</h2><p className="sub">{t.settingsSub}</p><div className="settings-grid"><div className="panel"><h3>{t.general}</h3><Select label={t.language} value={settings.language} options={[['pt-BR','🇧🇷 Português (Brasil)'],['en-US','🇺🇸 English'],['es-ES','🇪🇸 Español']]} onChange={(v)=>updateSettings({language:v})}/><h3>{t.startup}</h3><Check label={t.startWithWindows} checked={settings.startWithWindows} onChange={(v)=>updateSettings({startWithWindows:v})}/><Check label={t.startMinimized} checked={settings.startMinimized} onChange={(v)=>updateSettings({startMinimized:v})}/><Check label={t.closeToTray} checked={settings.closeToTray} onChange={(v)=>updateSettings({closeToTray:v})}/><h3>{t.updates}</h3><Check label={t.checkUpdates} checked={settings.checkUpdates} onChange={(v)=>updateSettings({checkUpdates:v})}/><Select label={t.channel} value={settings.updateChannel} options={['stable','beta','dev']} onChange={(v)=>updateSettings({updateChannel:v})}/><button onClick={checkUpdatesNow} disabled={updateLoading}>{updateLoading?t.running:(t.checkNow || 'Verificar agora')}</button>{updateInfo && <div className="update-box">{row(t.currentVersion, updateInfo.currentVersion)}{row(t.latestVersion, updateInfo.latestVersion, updateInfo.updateAvailable?'warn':'ok')}<p className="hint">{translateMessage(updateInfo.message, t)}</p>{(updateInfo.notes||[]).map((note:string,i:number)=><small className="field-help" key={i}>{translateMessage(note, t)}</small>)}</div>}</div><div className="panel"><h3>{t.appearance}</h3><Select label={t.theme} value={settings.theme} options={themeOptions} onChange={(v)=>updateSettings({theme:v})}/><Select label={t.scale} value={settings.scale} options={[90,100,110,125]} onChange={(v)=>updateSettings({scale:Number(v)})}/><Check label={t.animations} checked={settings.animations} onChange={(v)=>updateSettings({animations:v})}/><Check label={t.transparency} checked={settings.transparency} onChange={(v)=>updateSettings({transparency:v})}/></div><div className="panel"><h3>{t.audio}</h3><div className="quality-grid"><QualityCard active={settings.qualityMode==='lowLatency'} title={t.lowLatency} help={t.lowLatencyHelp} onClick={()=>applyQuality('lowLatency')}/><QualityCard active={settings.qualityMode==='balanced'} title={t.balanced} help={t.balancedHelp} onClick={()=>applyQuality('balanced')}/><QualityCard active={settings.qualityMode==='quality'} title={t.maxQuality} help={t.maxQualityHelp} onClick={()=>applyQuality('quality')}/></div><button onClick={()=>updateSettings({showAdvancedAudio:!settings.showAdvancedAudio})}>{settings.showAdvancedAudio?t.hideAdvanced:t.showAdvanced}</button>{settings.showAdvancedAudio && <div><Select label={t.engine} value={settings.engine} options={[['auto',t.automatic],['wasapi_shared','WASAPI Shared'],['wasapi_exclusive','WASAPI Exclusive'],['asio',t.futureAsio]]} onChange={(v)=>updateSettings({engine:v})}/><SmallHelp text={t.bufferHelp}/><Select label={t.buffer} value={settings.buffer} options={[64,128,256,512]} onChange={(v)=>updateSettings({buffer:Number(v)})}/><SmallHelp text={t.sampleRateHelp}/><Select label={t.sampleRate} value={settings.sampleRate} options={[44100,48000,96000]} onChange={(v)=>updateSettings({sampleRate:Number(v)})}/><SmallHelp text={t.aiHelp}/><Select label={t.aiEngine} value={settings.micEngine} options={[['off',t.disabled],['rnnoise','RNNoise'],['webrtc','WebRTC'],['deepfilternet','DeepFilterNet']]} onChange={(v)=>updateSettings({micEngine:v})}/></div>}</div><div className="panel"><h3>{t.advanced}</h3><p className="hint">{t.performanceHelp}</p>{row(t.latency, latencyText(perf,t), latencyStatus(n(perf?.roundTripLatencyMs ?? perf?.latencyMs)))}{row(t.inputLatency || 'Input latency', `${n(perf?.inputLatencyMs)} ms`, latencyStatus(n(perf?.inputLatencyMs)))}{row(t.outputLatency || 'Output latency', `${n(perf?.outputLatencyMs)} ms`, latencyStatus(n(perf?.outputLatencyMs)))}{row(t.buffer, `${settings.buffer} ${t.samples}`)}{row(t.sampleRate, `${settings.sampleRate} Hz`)}{row(t.logsPath, logsPath || '—')}<button onClick={openLogs}>{t.openLogs}</button><button onClick={runAudit} disabled={debugLoading}>{debugLoading?t.running:t.runAudit}</button></div></div></section>; }
@@ -632,7 +644,7 @@ function StudioPanel({t, apps, sessions, profiles, routes, state, perf, licenseS
   const liveRows = (sessions && sessions.length ? sessions : groupAudioRows(apps || [])).slice(0, 12);
   const [noiseResult, setNoiseResult] = useState('');
   const exportProfiles = () => {
-    const payload = JSON.stringify({ version: 'V6.6 Complete Routing Update', exportedAt: new Date().toISOString(), profiles }, null, 2);
+    const payload = JSON.stringify({ version: 'V6.6.4 Routing Cleanup & UX Sync', exportedAt: new Date().toISOString(), profiles }, null, 2);
     navigator.clipboard?.writeText(payload);
     alert(t.exportProfiles + ' OK');
   };
@@ -653,7 +665,7 @@ function StudioPanel({t, apps, sessions, profiles, routes, state, perf, licenseS
       <MicTestPanel t={t}/>
       <div className="panel"><h3>{t.noiseAnalyzer}</h3><p className="hint">{t.analyzeEnvironment}</p><button onClick={analyze}>{t.analyzeEnvironment}</button>{noiseResult && <p className="hint"><b>{t.analyzerResult}:</b><br/>{noiseResult}</p>}</div>
     </div>
-    <div className="panel"><h3>{t.mixer}</h3><p className="hint">{t.mixerRealHelp || 'Mixer conectado às sessões WASAPI: volume, mute, solo e rota ficam salvos por aplicativo. O motor A1-A5 agora persiste a matriz por aplicativo e prepara o Virtual Driver da V6.7.'}</p><table><thead><tr><th>{t.apps}</th><th>{t.volume}</th><th>{t.vuMeter}</th><th>{t.route}</th><th>{t.mute}</th><th>{t.solo}</th></tr></thead><tbody>{liveRows.map((a:any,i:number)=><tr key={`${a.key || a.process}-${i}`} className={a.recent?'recent-row':''}><td><b>{a.app}</b><small>{a.process}{a.recent ? ` · ${t.recentApp || 'Recente'}` : ''}</small></td><td><input className="volume-slider" type="range" min="0" max="100" value={n(isEffectivelyMuted(a) ? 0 : a.volume)} onChange={e=>updateMixerRow(a,{volume:Number(e.target.value), muted:false})}/><small>{n(isEffectivelyMuted(a) ? 0 : a.volume)}%</small></td><td><span className="mini-bar"><i style={{width:`${n(a.peak ?? a.activity)}%`}}/></span></td><td><div className="route-buttons">{ROUTE_KEYS.map((k,idx)=>{ const routing=normalizeRoute(a.routing); return <button key={k} className={routing[k]?'circle on':'circle'} onClick={()=>updateMixerRow(a,{routing:patchRoute(routing,k,!routing[k])})}>A{idx+1}</button>; })}</div><small>{routeLabel(a.routing)}</small></td><td><button className={isEffectivelyMuted(a)?'danger active':''} onClick={()=>updateMixerRow(a,{muted:!a.muted})}>{isEffectivelyMuted(a) ? (t.unmute || 'Unmute') : t.mute}</button></td><td><button className={a.solo?'active':''} onClick={()=>updateMixerRow(a,{solo:!a.solo})}>{t.solo}</button></td></tr>)}</tbody></table></div>
+    <div className="panel"><h3>{t.mixer}</h3><p className="hint">{t.studioMixerHelp || 'Studio agora é apenas mixer: volume, mute, solo, VU Meter e latência. As rotas A1-A5 são configuradas em Aplicativos.'}</p><table><thead><tr><th>{t.apps}</th><th>{t.volume}</th><th>{t.vuMeter}</th><th>{t.latency}</th><th>{t.mute}</th><th>{t.solo}</th></tr></thead><tbody>{liveRows.map((a:any,i:number)=><tr key={`${a.key || a.process}-${i}`} className={a.recent?'recent-row':''}><td><b>{a.app}</b><small>{a.process}{a.recent ? ` · ${t.recentApp || 'Recente'}` : ''}</small><small>{routeLabel(a.routing)}</small></td><td><input className="volume-slider" type="range" min="0" max="100" value={n(isEffectivelyMuted(a) ? 0 : a.volume)} onChange={e=>updateMixerRow(a,{volume:Number(e.target.value), muted:false})}/><small>{n(isEffectivelyMuted(a) ? 0 : a.volume)}%</small></td><td><span className="mini-bar"><i style={{width:`${n(a.peak ?? a.activity)}%`}}/></span></td><td>{latencyText(perf,t)}</td><td><button className={isEffectivelyMuted(a)?'danger active':''} onClick={()=>updateMixerRow(a,{muted:!a.muted})}>{isEffectivelyMuted(a) ? (t.unmute || 'Unmute') : t.mute}</button></td><td><button className={a.solo?'active':''} onClick={()=>updateMixerRow(a,{solo:!a.solo})}>{t.solo}</button></td></tr>)}</tbody></table></div>
     <div className="panel"><h3>{t.analytics}</h3>{row(t.profileCurrent, profiles?.[0] ? profileName(profiles[0],t) : '—')}{row(t.routesStatus, routes?.length || 0)}{row(t.lastRead, state?.timestamp || 'N/A')}</div>
   </section>;
 }

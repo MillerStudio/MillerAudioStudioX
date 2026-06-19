@@ -1,8 +1,9 @@
 {
-  "solo": "Solo",
-  "mute": "Silenciar",
-  "unmute": "Activar sonido",
-  "volume": "Volumen",
+  "dashboard": "Panel",
+  "applications": "Aplicaciones",
   "studio": "Studio",
-  "freeSessionExpired": "Tiempo Free expirado. El audio del equipo está bloqueado hasta continuar."
+  "devices": "Dispositivos",
+  "settings": "Configuración",
+  "support": "Soporte",
+  "license": "Licencia"
 }

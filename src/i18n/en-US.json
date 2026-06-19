@@ -1,8 +1,9 @@
 {
-  "solo": "Solo",
-  "mute": "Mute",
-  "unmute": "Unmute",
-  "volume": "Volume",
+  "dashboard": "Dashboard",
+  "applications": "Applications",
   "studio": "Studio",
-  "freeSessionExpired": "Free time expired. Computer audio is blocked until you continue."
+  "devices": "Devices",
+  "settings": "Settings",
+  "support": "Support",
+  "license": "License"
 }

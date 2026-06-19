@@ -4,7 +4,7 @@ Mixer de áudio profissional com IA integrada, roteamento por aplicativo e baixa
 
 ## Versão atual
 
-V6.6 Complete Routing Update
+V6.6.4 Routing Cleanup & UX Sync
 
 ## Como iniciar
 
@@ -24,8 +24,8 @@ npm run tauri build
 ```bash
 git status
 git add .
-git commit -m "V6.6 Complete Routing Update"
+git commit -m "V6.6.4 Routing Cleanup UX Sync"
 git push
-git tag v6.6.0
-git push origin v6.6.0
+git tag v6.6.4
+git push origin v6.6.4
 ```
